@@ -1,0 +1,8 @@
+{
+	"test1": {
+		"type": "Subjective",
+		"subjectivity_extent": 1,
+		"price_indication": 100,
+		"is_relative": false
+	}
+}

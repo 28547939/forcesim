@@ -1,0 +1,8 @@
+{
+	"test1":
+		{
+			"type": "TrivialAgent",
+			"direction": "up",
+			"internal_force": 1
+		}
+}

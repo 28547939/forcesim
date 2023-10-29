@@ -1,0 +1,8 @@
+{
+	"s1": {
+		"type": "PRICE",
+		"granularity": 1,
+		"addr": "127.0.0.1",
+		"port": 5000
+	}
+}
