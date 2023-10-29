@@ -1,0 +1,26 @@
+{
+	"agent1": {
+		"type": "TrivialAgent",
+		"external_force": 0.1,
+		"schedule_every": 1,
+		"direction": "UP",
+		"internal_force": 0.1
+	},
+
+	"agent2": {
+		"type": "TrivialAgent",
+		"external_force": 0.1,
+		"schedule_every": 1,
+		"direction": "DOWN",
+		"internal_force": 0.1
+	},
+
+	"agent3": {
+		"type": "BasicNormalDistAgent",
+		"external_force": 0.1,
+		"schedule_every": 1,
+		"mean": 0,
+		"stddev": 10
+	}
+}
+

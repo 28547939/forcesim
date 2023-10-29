@@ -1,0 +1,27 @@
+
+output_dir: '/home/market-force-sim/forcesim/py/test/basic/output'
+
+iter_block_size: 100
+
+agents:
+    agent1: 2
+    agent2: 2
+    agent3: 10
+
+subscribers:
+    s1:
+        graph: true
+
+# the info_sequence item is required
+# it specifies the sequence of lists of info objects to emit to the Market
+#    between each iter block
+# the first list in info_sequence is emitted before the first iter_block, and so on
+# 
+# info_sequence also implicitly indicates the total number of iter_blocks. after all items
+# in info_sequence have been emitted, we stop. 
+# elements of info_sequence can be empty if desired
+
+info_sequence:
+    - [ 'test1' ]
+    - [ 'test1' ]
+    - []
