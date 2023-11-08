@@ -5,6 +5,8 @@
 #include "../ts.h"
 #include "../json_conversion.h"
 
+#include "../Market.h"
+
 #include <iostream>
 #include <optional>
 #include <memory>
@@ -25,6 +27,21 @@ void print_agentaction(price_t p, AgentAction a) {
 		<< "\n"
 	;
 }
+
+
+// create a 'dummy' AgentRecord object to allow us to call Market::do_evaluate
+/*
+AgentRecord get_agentrecord(std::unique_ptr<Agent> a) {
+
+    return std::move(AgentRecord {
+        std::move(a),
+        0
+        0
+        std::unique_ptr<ts<AgentAction>>(),
+        {}
+    });
+}
+*/
 
 namespace po = boost::program_options;
 
@@ -69,9 +86,6 @@ int main(int argc, char* argv[]) {
     }
 
 
-	std::unique_ptr<ts<Info::infoset_t>> info_history(
-		new ts<Info::infoset_t>()
-	);
 
 
 	// also works
@@ -83,41 +97,18 @@ int main(int argc, char* argv[]) {
 		new Info::Info<Info::Types::Subjective>()
 	);
 
+    Info::infoset_t infoset = { info };
+
 	info->subjectivity_extent = 0.9;
 	info->price_indication = 2;
-	info->relative = false;
+	info->is_relative = false;
 
 
-/*	
-auto info = std::shared_ptr<Info::Abstract>(
-	)
-*/
-
-/*
-	auto j = std::static_pointer_cast<Info::Abstract>(i);
-	info_history->append({ j });
-	
-	auto k = Info::get_cast<Info::Types::Subjective>(j);
-	*/
-
-/*
-	var_t v;
-
-	std::visit([](auto&& x) { visit(x); }, v);
-
-	do_visit(visit, v);
-	*/
-	
-	info_history->append({ info });
-
-
+    std::shared_ptr<Market::Market> market(new Market::Market());
 
 	try {
-		std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view(
-			new ts<Info::infoset_t>::sparse_view(*info_history)
-		);
 		
-		std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view_ret;
+		//std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view_ret;
 
 
 		float external_force = 1;
@@ -128,7 +119,7 @@ auto info = std::shared_ptr<Info::Abstract>(
 
 		while (auto x = 1) { break; }
 
-		auto a = std::unique_ptr<ModeledCohortAgent_v1>(
+		auto a = std::shared_ptr<ModeledCohortAgent_v1>(
 			new ModeledCohortAgent_v1(json {
 				{ "external_force", external_force },
 				{ "schedule_every", schedule_every },
@@ -139,21 +130,34 @@ auto info = std::shared_ptr<Info::Abstract>(
 			})
 		);
 
+        //auto record = get_agentrecord(std::move(a));
+
 		price_t price = 1;
 
 
 		for (int i = 0; i < N; i++) {
+            price_t existing_price = price;
 
-			auto [act, info_view_ret] = a->evaluate(price, std::move(info_view));
+/*
+			auto [act, info_view_ret] = a->evaluate(existing_price, std::move(info_view));
 			info_view = std::move(info_view_ret.value());
 
 			auto force = (act->internal_force / 100 * a->config().external_force);
 			double factor = act->direction == Direction::UP ? 1 + force : 1 - force;
 			price = price * factor;
 
-			//auto act = m.do_evaluate(1);
+std::pair<price_t, AgentAction>
+Market::test_evaluate(
+    std::shared_ptr<Agent> agent, 
+    price_t p_existing, 
+    price_t p_current,
+    std::optional<Info::infoset_t>& info)
+            */
 
-			print(price, *act);
+			auto [new_price, act] = market->test_evaluate(a, existing_price, price, infoset);
+
+
+			print_agentaction(price, act);
 		}
 	} catch (std::invalid_argument& e) {
 		std::cout << e.what() << "\n";
