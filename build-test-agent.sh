@@ -10,8 +10,9 @@ clang++ -g -O0 -c -std=c++20 -pthread -I/usr/local/include/  \
 	-I/usr/home/market-force-sim/vendor/Crow/include \
 	-I/usr/home/market-force-sim/vendor/json/include/   \
 	-fdiagnostics-fixit-info \
-	tests/agent.cpp Agent.cpp json_conversion.cpp
+	tests/agent.cpp Agent.cpp json_conversion.cpp Market.cpp Subscriber.cpp
 
 
-clang++ -o test-agent -lglog -lboost_program_options -lboost_random -L/usr/local/lib -pthread  agent.o Agent.o json_conversion.o
+clang++ -o test-agent -lglog -lboost_program_options -lboost_random -L/usr/local/lib -pthread  \
+	agent.o Agent.o json_conversion.o Market.o Subscriber.o
 

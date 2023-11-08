@@ -28,6 +28,7 @@ struct AgentAction {
 enum class AgentType { 
     Determinstic,
     ModeledCohort_v1,
+    ModeledCohort_v2,
     Trivial,
     BasicNormalDist
 };
@@ -241,10 +242,11 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
     public:
     ModeledCohortAgent_v1(AgentConfig<AgentType::ModeledCohort_v1>);
     ~ModeledCohortAgent_v1() {}
-    AgentAction do_evaluate(price_t p);
+    virtual AgentAction do_evaluate(price_t p);
 
 
-    void info_update_view(Info::infoset_t&);
+    virtual void info_handler();
+    virtual void info_update_view(std::shared_ptr<Info::Info<Info::Types::Subjective>>&);
 
 
     // for testing/debugging
@@ -256,6 +258,44 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
 
 };
 
+
+template<>
+struct AgentConfig<AgentType::ModeledCohort_v2> : AgentConfig<AgentType::ModeledCohort_v1> {
+    AgentConfig(json config) : AgentConfig<AgentType::ModeledCohort_v1>(config) 
+    {
+        // TODO validate - all parameters must be in [0,1]
+
+    }
+
+    // ratio of current price density to price view density
+    double r_0;
+    // how far away from the price view (i.e. how close to the current price) should the
+    // left "leg" of the price view density peak extend
+    // (higher value means closer to current price, and also steeper slope depending on r_2)
+    double r_1;
+    // ratio of the height of the left "leg" of the price view density peak, to the peak itself
+    double r_2;
+    double e_0;
+    double e_1;
+    double e_2;
+    double i_0;
+    double i_1;
+
+};
+class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
+    protected:
+    AgentConfig<AgentType::ModeledCohort_v2> config;
+    
+    float current_subjectivity_extent;
+
+    public:
+    ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2>);
+    ~ModeledCohortAgent_v2() {}
+    virtual AgentAction do_evaluate(price_t p);
+
+    std::pair<std::deque<double>, std::deque<double>>
+    compute_distribution_points(price_t, std::optional<float> = std::nullopt);
+};
 
 
 

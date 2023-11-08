@@ -417,6 +417,11 @@ class Market : public std::enable_shared_from_this<Market> {
         std::variant<timepoint_t, std::string> 
         emit_info(Info::infoset_t& x);
 
+        // used to test/simulate what price would result from an iteration on one Agent
+        // 
+        std::pair<price_t, AgentAction>
+        test_evaluate(std::shared_ptr<Agent>, price_t, price_t, std::optional<Info::infoset_t>);
+
 };
 
 

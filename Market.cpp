@@ -690,6 +690,48 @@ Market::emit_info(Info::infoset_t& x) {
     }
 }
 
+std::pair<price_t, AgentAction>
+Market::test_evaluate(
+    std::shared_ptr<Agent> agent, 
+    price_t p_existing, 
+    price_t p_current,
+    std::optional<Info::infoset_t> info)
+{
+    std::optional<info_view_t> info_view;
+
+    if (info.has_value()) {
+        ts<Info::infoset_t> info_history;
+
+        info_history.append(info.value());
+
+        info_view = std::unique_ptr<ts<Info::infoset_t>::sparse_view>(
+            new ts<Info::infoset_t>::sparse_view(info_history)
+        );
+    }
+
+
+    // Market::do_evaluate requires that Agents be in a unique_ptr as usual; 
+    // we fake that situation here
+    std::unique_ptr<Agent> agent_uniq(agent.get());
+
+    AgentRecord record = AgentRecord {
+        std::move(agent_uniq),
+        0,
+        0,
+        std::unique_ptr<ts<AgentAction>>(),
+        {}
+    };
+
+    auto [act, newprice, infoview_ret] = this->do_evaluate(
+        record, p_existing, p_current, std::move(info_view)
+    );
+
+    agent_uniq.release();
+
+    return { newprice, act.value() };
+}
+
+
 
 void Market::op_execute_helper() {
     while (this->op_queue.size() > 0) {
