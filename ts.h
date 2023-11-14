@@ -263,6 +263,13 @@ class ts {
     }
 
 
+    /*
+        view and sparse_view
+        - the ts object provided to either view or sparse_view must not be destroyed before 
+            the view/sparse_view 
+    */
+
+
     /*  When constructed, the sparse_view keeps a record of each element in the underlying ts which
         is _marked as being present (non-empty)
         Unlike the view, the sparse_view captures only a fixed contiguous range of values from 
@@ -400,13 +407,9 @@ class ts {
 
         T value() {
             auto [t,x] = *(this->_cursor);
-            if (x->has_value()) {
-                return x->value();
-            } else {
-                // this should never happen since we only consider elements with non-nullopt values
-                // during construction
-                throw std::bad_optional_access();
-            }
+            return x->value();
+            // std::bad_optional_access should never happen since we only consider elements 
+            // with non-nullopt values during construction
         }
         T read() { return this->value(); }
 
