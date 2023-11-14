@@ -155,7 +155,7 @@ info_view can be nullopt, but info_history should never be uninitialized
 
 */
 
-                // if Market::info_history is empty, this is a nullopt
+                // if Market::info_history is empty, this is a std::nullopt
                 // if global_agent_info_cursor is nullopt, info_view will begin at the beginning of
                 // info_history
                 auto info_view = this->info_iterator(this->global_agent_info_cursor);
@@ -165,7 +165,8 @@ info_view can be nullopt, but info_history should never be uninitialized
 
                 const auto p2s = std::chrono::steady_clock::now();
                 
-                // iteration block - exactly r iterations
+                // iteration block - exactly r iterations, which is no more than the iter block
+                // value configured in the Market instance
                 for (int i = r; i > 0; i--) {
                     auto existing_price = this->current_price;
                     auto current_price = existing_price;
@@ -699,9 +700,11 @@ Market::test_evaluate(
 {
     std::optional<info_view_t> info_view;
 
-    if (info.has_value()) {
-        ts<Info::infoset_t> info_history;
+    // needs to remain in-scope so that it's not destroyed before the agent instance
+    // uses the sparse_view
+    ts<Info::infoset_t> info_history(0, mark_mode_t::MARK_PRESENT);
 
+    if (info.has_value()) {
         info_history.append(info.value());
 
         info_view = std::unique_ptr<ts<Info::infoset_t>::sparse_view>(
@@ -726,7 +729,7 @@ Market::test_evaluate(
         record, p_existing, p_current, std::move(info_view)
     );
 
-    agent_uniq.release();
+    record.agent.release();
 
     return { newprice, act.value() };
 }
