@@ -64,6 +64,7 @@ class Agent {
     // temporary object passed to the Agent at every Agent::evaluate invocation
     std::optional<info_view_t> info_view;
 
+    // timepoint of the most recently read info entry
     // an empty _info_cursor indicates the agent has not read any Market::info_history entries
     std::optional<timepoint_t> _info_cursor;
 
@@ -73,7 +74,7 @@ class Agent {
     std::optional<Info::infoset_t>
     read_next_infoset() {
 
-        // std::nullopt info_view means that Market::info_history is empty
+        // std::nullopt info_view  iff  Market::info_history is empty
         if (this->info_view.has_value()) {
             auto& info_view_ptr = this->info_view.value();
 
@@ -261,25 +262,39 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
 
 template<>
 struct AgentConfig<AgentType::ModeledCohort_v2> : AgentConfig<AgentType::ModeledCohort_v1> {
-    AgentConfig(json config) : AgentConfig<AgentType::ModeledCohort_v1>(config) 
+    AgentConfig(json config) 
+    :   AgentConfig<AgentType::ModeledCohort_v1>(config)
     {
         // TODO validate - all parameters must be in [0,1]
+        auto parameters = config["distribution_parameters"].get<std::deque<double>>();
+        this->e_0 = parameters[0];
+        this->i_0 = parameters[1];
+        this->r_0 = parameters[2];
+        this->r_1 = parameters[3];
+        this->r_2 = parameters[4];
+        this->i_1 = parameters[5];
+        this->i_2 = parameters[6];
+        this->e_1 = parameters[7];
+
+        for (x in parameters) {
+            if (x < 0 || x > 1) {
+                throw std::out_of_range(
+                    "values in distribution_parameters need to all be in [0,1]"
+                );
+            }
+        }
 
     }
 
-    // ratio of current price density to price view density
-    double r_0;
-    // how far away from the price view (i.e. how close to the current price) should the
-    // left "leg" of the price view density peak extend
-    // (higher value means closer to current price, and also steeper slope depending on r_2)
-    double r_1;
-    // ratio of the height of the left "leg" of the price view density peak, to the peak itself
-    double r_2;
+    // see diagram(s) for explanation
     double e_0;
-    double e_1;
-    double e_2;
     double i_0;
+    double r_0;
+    double r_1;
+    double r_2;
     double i_1;
+    double i_2;
+    double e_1;
 
 };
 class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
@@ -292,6 +307,9 @@ class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
     ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2>);
     ~ModeledCohortAgent_v2() {}
     virtual AgentAction do_evaluate(price_t p);
+
+    virtual void info_update_view(std::shared_ptr<Info::Info<Info::Types::Subjective>>&);
+
 
     std::pair<std::deque<double>, std::deque<double>>
     compute_distribution_points(price_t, std::optional<float> = std::nullopt);
