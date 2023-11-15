@@ -28,6 +28,17 @@ void print_agentaction(price_t p, AgentAction a) {
 	;
 }
 
+void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
+    auto pts = a->compute_distribution_points(p);
+
+    std::ostringstream s;
+    for (auto x = pts.first.begin(), y = pts.second.begin(); x != pts.first.end(); ++x, ++y) {
+        s << "(" + std::to_string(*x) +", "+ std::to_string(*y) +")\n";
+    }
+
+    std::cout << s.str();
+}
+
 
 // create a 'dummy' AgentRecord object to allow us to call Market::do_evaluate
 /*
@@ -45,29 +56,19 @@ AgentRecord get_agentrecord(std::unique_ptr<Agent> a) {
 
 namespace po = boost::program_options;
 
-namespace {
-std::map<int, std::function<int(int)>
-> x = {{}};
-};
-
-/*
-typedef std::variant<Info::Info<Info::Types::Subjective>, Info::Info<Info::Types::Test1>> var_t;
-
-void visit(Info::Info<Info::Types::Subjective>) {}
-void visit(Info::Info<Info::Types::Test1>) {}
-
-template<typename T>
-void do_visit(std::function<void(T)> f, var_t v) {
-	std::visit([&f](auto&& x) { f(x); }, v);
-}
-*/
-
 int main(int argc, char* argv[]) {
+
+    FLAGS_stderrthreshold=0;
+    FLAGS_logtostderr=1;
+    FLAGS_v=9;
+
+    google::InitGoogleLogging(argv[0]);
+
 	int N;
 
     po::options_description desc("Options");
     desc.add_options()
-        ("count", po::value<int>()->required(), "")
+        ("count", po::value<int>()->default_value(10), "")
     ;
 
     po::variables_map vm;
@@ -88,20 +89,16 @@ int main(int argc, char* argv[]) {
 
 
 
-	// also works
-	//auto d = new D(D { {}, 0, 1.0 });
-	//auto d = new D { {}, 0, 1.0 };
-
-
 	auto info = std::shared_ptr<Info::Info<Info::Types::Subjective>>(
 		new Info::Info<Info::Types::Subjective>()
 	);
 
-    Info::infoset_t infoset = { info };
 
 	info->subjectivity_extent = 0.9;
 	info->price_indication = 2;
 	info->is_relative = false;
+
+    Info::infoset_t infoset = { std::static_pointer_cast<Info::Abstract>(info) };
 
 
     std::shared_ptr<Market::Market> market(new Market::Market());
@@ -113,12 +110,13 @@ int main(int argc, char* argv[]) {
 
 		float external_force = 1;
 		int schedule_every = 1;
-		double default_variance = 0.1;
+		double initial_variance = 0.1;
 		double variance_multiplier = 1;
 		double force_threshold = 10;
 
 		while (auto x = 1) { break; }
 
+            /*
 		auto a = std::shared_ptr<ModeledCohortAgent_v1>(
 			new ModeledCohortAgent_v1(json {
 				{ "external_force", external_force },
@@ -129,39 +127,50 @@ int main(int argc, char* argv[]) {
 		//		{ "factor_base", max_variance }
 			})
 		);
+            */
+
+		auto a = std::shared_ptr<ModeledCohortAgent_v2>(
+			new ModeledCohortAgent_v2(json {
+				{ "external_force", external_force },
+				{ "schedule_every", schedule_every },
+				{ "initial_variance", initial_variance },
+				{ "variance_multiplier", variance_multiplier },
+				{ "force_threshold", force_threshold },
+                { "distribution_parameters", json::array({
+                    0.1,
+                    0.1,
+                    0.1,
+                    0.1,
+                    0.1,
+                    0.1,
+                    0.1,
+                    0.1
+                })}
+            })
+        );
 
         //auto record = get_agentrecord(std::move(a));
 
 		price_t price = 1;
 
+        std::optional<Info::infoset_t> infoset_opt(infoset);
+
 
 		for (int i = 0; i < N; i++) {
+            // use when there are multiple agent instances being tested
             price_t existing_price = price;
 
-/*
-			auto [act, info_view_ret] = a->evaluate(existing_price, std::move(info_view));
-			info_view = std::move(info_view_ret.value());
+            print_distribution(a, price);
 
-			auto force = (act->internal_force / 100 * a->config().external_force);
-			double factor = act->direction == Direction::UP ? 1 + force : 1 - force;
-			price = price * factor;
+			auto [new_price, act] = market->test_evaluate(a, existing_price, price, infoset_opt);
 
-std::pair<price_t, AgentAction>
-Market::test_evaluate(
-    std::shared_ptr<Agent> agent, 
-    price_t p_existing, 
-    price_t p_current,
-    std::optional<Info::infoset_t>& info)
-            */
-
-			auto [new_price, act] = market->test_evaluate(a, existing_price, price, infoset);
-
+            infoset_opt.reset();
 
 			print_agentaction(price, act);
+
+            price = new_price;
 		}
 	} catch (std::invalid_argument& e) {
 		std::cout << e.what() << "\n";
 	}
-
-
 }
