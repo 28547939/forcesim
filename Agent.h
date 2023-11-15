@@ -276,7 +276,7 @@ struct AgentConfig<AgentType::ModeledCohort_v2> : AgentConfig<AgentType::Modeled
         this->i_2 = parameters[6];
         this->e_1 = parameters[7];
 
-        for (x in parameters) {
+        for (int x : parameters) {
             if (x < 0 || x > 1) {
                 throw std::out_of_range(
                     "values in distribution_parameters need to all be in [0,1]"
