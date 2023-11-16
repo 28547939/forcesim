@@ -4,9 +4,10 @@ output_dir: '/home/market-force-sim/forcesim/py/test/basic/output'
 iter_block_size: 100
 
 agents:
-    agent1: 2
-    agent2: 2
-    agent3: 10
+    '2023-11-15': 20
+    #agent1: 2
+    #agent2: 2
+    #agent3: 10
 
 subscribers:
     s1:

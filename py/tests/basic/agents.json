@@ -21,6 +21,33 @@
 		"schedule_every": 1,
 		"mean": 0,
 		"stddev": 10
+	},
+
+
+	"2023-11-14": {
+		"type": "ModeledCohortAgent_v2",
+		"external_force": 0.1,
+		"schedule_every": 1,
+		"initial_variance": 0.1,
+		"variance_multiplier": 1,
+		"force_threshold": 10,
+		"default_price_view": 1,
+		"distribution_parameters": [
+			0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1
+		]
+	},
+
+	"2023-11-15": {
+		"type": "ModeledCohortAgent_v2",
+		"external_force": 0.01,
+		"schedule_every": 1,
+		"initial_variance": 0.1,
+		"variance_multiplier": 0.1,
+		"force_threshold": 100,
+		"default_price_view": 1,
+		"distribution_parameters": [
+			0.25, 0.25, 1, 0.2, 1, 0.1, 0.1, 0
+		]
 	}
 }
 
