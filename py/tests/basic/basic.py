@@ -143,7 +143,7 @@ async def main():
     config=util.load_config_yaml(config_path)
 
     if info_json_path:
-        info_spec=util.load_info_from_json(info_json_path)
+        info_spec=dict(util.load_info_from_json(info_json_path))
 
     # ensure we are configuring the instance starting from an empty/clean state
     interface.reset()
@@ -273,7 +273,7 @@ async def main():
         info_obj=[]
         for info_name in info_list:
             try:
-                info_obj.append(info_spec['info_name'])
+                info_obj.append(info_spec[info_name])
             except KeyError as e:
                 print(f'info object {info_name} specified in info_sequence was not found - skipping')
 
