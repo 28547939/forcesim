@@ -57,6 +57,14 @@ namespace {
                 );
             }
         },
+
+        { "ModeledCohortAgent_v2", 
+            [](json y) {
+                return unique_ptr<Agent>(
+                    new ModeledCohortAgent_v2 (AgentConfig<AgentType::ModeledCohort_v2>(y))
+                );
+            }
+        },
     };
 
 };
@@ -403,6 +411,10 @@ void Interface::crow__add_agents(const crow::request& req, crow::response& res) 
         [](auto interface, agent_config_item& spec) -> list_ret_t<std::deque<Market::agentid_t>>
     {
         auto factory_element = agent_factory.find(spec.type);
+
+        if (factory_element == agent_factory.end()) {
+            return std::string("Agent factory not implemented: ") + spec.type;
+        }
 
         try {
             std::deque<Market::agentid_t> ids;

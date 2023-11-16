@@ -10,8 +10,9 @@ from enum import Enum, auto
 
 class agentclass_t(Enum):
     TrivialAgent = auto()
-    ModeledCohortAgent = auto()
+    ModeledCohortAgent_v1 = auto()
     BasicNormalDistAgent = auto()
+    ModeledCohortAgent_v2 = auto()
 
     def __str__(self):
         return self.name
@@ -81,7 +82,7 @@ class BasicNormalDistAgentConfig(AgentConfig):
 
 #@dataclass(kw_only=True)
 @dataclass()
-class ModeledCohortAgentConfig(AgentConfig):
+class ModeledCohortAgent_v1Config(AgentConfig):
 
 	# the variance used to initialize the RV that the agent samples from
 	# as Subjective Info objects are emitted, the agent updates the variance 
@@ -105,6 +106,9 @@ class ModeledCohortAgentConfig(AgentConfig):
     default_price_view: float
 
 
+@dataclass
+class ModeledCohortAgent_v2Config(ModeledCohortAgent_v1Config):
+    distribution_parameters: List[float]
 
 
 
@@ -112,7 +116,8 @@ class ModeledCohortAgentConfig(AgentConfig):
 agentconf_ctor = {                                           
     agentclass_t.TrivialAgent: TrivialAgentConfig,           
     agentclass_t.BasicNormalDistAgent: BasicNormalDistAgentConfig,           
-    agentclass_t.ModeledCohortAgent: ModeledCohortAgentConfig
+    agentclass_t.ModeledCohortAgent_v1: ModeledCohortAgent_v1Config,
+    agentclass_t.ModeledCohortAgent_v2: ModeledCohortAgent_v2Config
 }
 
 #@dataclass(kw_only=True, frozen=True)
