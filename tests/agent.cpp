@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
 
 
 	info->subjectivity_extent = 0.9;
-	info->price_indication = 2;
+	info->price_indication = 100;
 	info->is_relative = false;
 
     Info::infoset_t infoset = { std::static_pointer_cast<Info::Abstract>(info) };
@@ -137,14 +137,7 @@ int main(int argc, char* argv[]) {
 				{ "variance_multiplier", variance_multiplier },
 				{ "force_threshold", force_threshold },
                 { "distribution_parameters", json::array({
-                    0.1,
-                    0.1,
-                    0.1,
-                    0.1,
-                    0.1,
-                    0.1,
-                    0.1,
-                    0.1
+                    0, 0.1, 0.1, 1, 0.1, 0.5, 0.01, 0
                 })}
             })
         );
@@ -160,9 +153,9 @@ int main(int argc, char* argv[]) {
             // use when there are multiple agent instances being tested
             price_t existing_price = price;
 
-            print_distribution(a, price);
 
 			auto [new_price, act] = market->test_evaluate(a, existing_price, price, infoset_opt);
+            print_distribution(a, price);
 
             infoset_opt.reset();
 
