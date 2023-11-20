@@ -175,13 +175,13 @@ ModeledCohortAgent_v2::compute_distribution_points(
         return { {}, {} };
     }
 
+    auto e_0 = this->config.e_0;
     auto i_0 = this->config.i_0;
-    auto i_1 = this->config.i_1;
-    auto i_2 = this->config.i_1;
     auto r_0 = this->config.r_0;
     auto r_1 = this->config.r_1;
     auto r_2 = this->config.r_2;
-    auto e_0 = this->config.e_0;
+    auto i_1 = this->config.i_1;
+    auto i_2 = this->config.i_2;
     auto e_1 = this->config.e_1;
     auto v = this->price_view.convert_to<double>();
     auto c = price.convert_to<double>();
@@ -195,9 +195,9 @@ ModeledCohortAgent_v2::compute_distribution_points(
     // on whether there are duplicate x values
     std::deque<double> ys = {
         0,
-        r_0*s, 
-        r_0*s,
-        r_2*s,
+        r_0*(1-s), 
+        r_0*(1-s),
+        r_2*(1-s),
         1,
         1, 
         1, 
@@ -207,8 +207,8 @@ ModeledCohortAgent_v2::compute_distribution_points(
     std::vector<double> segments = {
         e_0*s*d,
         i_0*s*d,                    // v sum of these two is always (d - i_1*s*d)
-        (d - i_1*s*d)*(1-r_1*s),    // always nonzero
         (d - i_1*s*d)*(r_1*s),      // always nonzero
+        (d - i_1*s*d)*(1-r_1*s),    // always nonzero
         i_1*s*d,
         i_2*s*d,
         e_1*s*d
@@ -219,16 +219,17 @@ ModeledCohortAgent_v2::compute_distribution_points(
     std::map<double, std::deque<double>> pts_multi;
 
     // initialize with the first point 
-    if (this->price_view > price) {
+    if (this->price_view < price) {
         pts_multi.insert(pts_multi.end(), {
-            c - segments[1] - segments[0],
+            v - segments[1] - segments[0],
             { ys[0] }
         });
     } else {
         std::reverse(segments.begin(), segments.end());
+        std::reverse(ys.begin(), ys.end());
 
         pts_multi.insert(pts_multi.end(), {
-            v - segments[1] - segments[0],
+            c - segments[1] - segments[0],
             { *( ys.end() - 1 ) }
         });
     }
@@ -255,7 +256,7 @@ ModeledCohortAgent_v2::compute_distribution_points(
 
     }
 
-    // next, "collapse" points with identical x coordinates together to avoid
+    // next, "collapse" / "consolidate" points with identical x coordinates together to avoid
     // providing inconsistent data to the distribution (i.e. each x value needs exactly
     // one y value - it needs to be a (math) function)
 
