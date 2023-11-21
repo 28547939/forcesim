@@ -52,11 +52,31 @@ class AgentRecord():
     Stateless and "procedural" (ie not object-oriented); 
         used by stateful / object oriented interfaces 
 
+    Structure of JSON returned by server:
+
+    { 
+       "is_error": bool,
+       "message": str,
+       "api_version": float,
+       "data": Any  (generally either dict or list)
+    }
 """
 class Interface():
     """
     TODO documentation of return values, for now see Interface.h
     """
+    
+    class interface_ret():
+        def __init__(self, resp, msg=None, data=None):
+            self.resp = resp 
+            self.msg = msg 
+            self.data = data
+
+    class Ok(interface_ret): 
+        pass
+    class Error(interface_ret):
+        pass
+
 
     class InterfaceException(BaseException):
         pass
@@ -70,7 +90,7 @@ class Interface():
     def _url(self, path):
         return self.remote_addr +':'+ self.remote_port
 
-    async def _aio_json_req(self, path, data=None, method='POST'):
+    async def _aio_json_req(self, path, data=None, method='POST') -> interface_ret:
         async with aiohttp.ClientSession() as session:
             url='http://'+ self.remote_addr +':'+ str(self.remote_port) + path
 
@@ -80,11 +100,19 @@ class Interface():
             async with session.request(method, url, data=data) as resp:
                 try:
                     json_resp = await resp.json(content_type=None)
-                    return (resp, json_resp)
+
+                    if json_resp['is_error'] == True:
+                        return Interface.Error(resp, json_resp['message'], json_resp['data'])
+                    else:
+                        return Interface.Ok(resp, json_resp['message'], json_resp['data'])
+
+                except Interface.InterfaceException as e:
+                    raise e
+                except KeyError as e:
+                    raise Interface.InterfaceException('could not parse JSON response' + e)
                 except json.JSONDecodeError as e:
                     data="Unable to parse JSON in server's response\nServer's response:\n\n%s\n" % resp.text
                     raise Interface.InterfaceException(data)
-
 
 
 
