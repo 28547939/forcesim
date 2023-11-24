@@ -40,78 +40,6 @@ Info structures are sent into the market as specified.
 
 
 
-async def control_task(i : Interface, s : Subscriber):
-
-#    agents = []
-#    N = 200
-#    for k in range(N):
-#        x = Agent(i, agentclass_t.ModeledCohortAgent,
-#            external_force=0.01,
-#            schedule_every=k+1, 
-#            initial_variance=1, 
-#            variance_multiplier=0.1,
-#            force_threshold=1,
-#            default_price_view=2
-#        )
-#
-#        agents.append(x)
-#
-#    M = 20
-#    for k in range(M):
-#        pass
-#
-#        x = Agent(i, agentclass_t.ModeledCohortAgent,
-#            external_force=0.1,
-#            schedule_every=(k+1)*10,
-#            initial_variance=1, 
-#            variance_multiplier=0.1,
-#            force_threshold=1,
-#            default_price_view=2
-#        )
-#
-#        agents.append(x)
-
-
-    await i.run(100)
-    i.start()
-
-    print('started')
-
-    await i.wait_for_stop()
-    print('wait_for_stop completed')
-
-
-    info_0 = SubjectiveInfo(
-        type=infotype_t.Subjective,
-        subjectivity_extent=1,
-        price_indication=1000,
-        is_relative=False
-    )
-
-    i.emit_info([ info_0 ])
-
-    #print(i.list_subscribers())
-    #print(i.list_agents())
-
-    await i.run(500)
-
-    await i.wait_for_stop()
-    print('wait_for_stop completed')
-
-    await s.listener.wait_flushed()
-
-    print('wait_flushed completed')
-
-    s.listener.render_graph('./test.png')
-
-    i.reset()
-
-
-
-
-
-
-
 async def main():
 
     prs=argparse.ArgumentParser(
@@ -121,9 +49,9 @@ async def main():
 
     prs.add_argument('--instance-addr', default='127.0.0.1')
     prs.add_argument('--instance-port', default='18080')
-    prs.add_argument('--agents-json', required=True)
-    prs.add_argument('--subscribers-json', required=True)
-    prs.add_argument('--info-json', default=None)
+    prs.add_argument('--agents-json-dir', required=True)
+    prs.add_argument('--subscribers-json-dir', required=True)
+    prs.add_argument('--info-json-dir', default=None)
     prs.add_argument('--config-yaml', required=True)
 
     args=vars(prs.parse_args())
@@ -132,18 +60,17 @@ async def main():
 
     interface = Interface(args['instance_addr'] , args['instance_port'])
 
-    agents_json_path=args['agents_json']
-    subscribers_json_path=args['subscribers_json']
-    info_json_path=args['info_json']
+    agents_json_dir=args['agents_json_dir']
+    subscribers_json_dir=args['subscribers_json_dir']
+    info_json_dir=args['info_json_dir']
     config_path=args['config_yaml']
 
-    agent_spec=dict(util.load_agents_from_json(agents_json_path))
-    subscriber_config=dict(util.load_subscribers_from_json(subscribers_json_path))
-    info_spec={}
+    agent_spec = util.load_json_recursive(agents_json_dir, util.AgentLoader, verbose=True)
+    subscriber_config = util.load_json_recursive(subscribers_json_dir, util.SubscriberLoader, verbose=True)
+    info_spec = util.load_json_recursive(info_json_dir, util.InfoLoader, verbose=True)
+
     config=util.load_config_yaml(config_path)
 
-    if info_json_path:
-        info_spec=dict(util.load_info_from_json(info_json_path))
 
     # ensure we are configuring the instance starting from an empty/clean state
     interface.reset()
