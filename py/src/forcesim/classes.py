@@ -189,13 +189,13 @@ class Subscriber():
 
 
     async def start(self):
-        print('start')
-
         try: 
-            (s_r)=(self._interface.add_subscribers([self._config]))[0]
+            ret=await (self._interface.add_subscribers([self._config]))
         except Interface.InterfaceException as e: 
             print('Aborting subscriber creation')
             print(e)
+
+        (s_r)=ret.data[0]
 
         print('subscriber record: %s' % s_r)
         self.record=s_r
@@ -206,8 +206,8 @@ class Subscriber():
 
         await t
 
-    def delete(self):
-        self._interface.del_subscribers(self.record.id)
+    async def delete(self):
+        await self._interface.del_subscribers(self.record.id)
         del(self.record)
         self.remove_graph()
 
@@ -236,22 +236,24 @@ class Agent():
         self._interface=i
         self._spec=spec
     
-    def register_one(self):
+    async def register_one(self):
         if self._record:
             raise Exception("already registered")
 
-        self._record=self._interface.add_agents([ ( self._spec, 1 ) ])
+        self._record=await self._interface.add_agents([ ( self._spec, 1 ) ])
 
-    def subscribe_agentaction(self, config : SubscriberConfig, graph : Graph):
-        config.parameter=self._record.id
-        s=Subscriber(self._interface, config, graph)
-        return s
+    async def subscribe_agentaction(self, config : SubscriberConfig, graph : Graph):
+        raise NotImplementedError
 
-    def delete(self):
+        #config.parameter=self._record.id
+        #s=Subscriber(self._interface, config, graph)
+        #return s
+
+    async def delete(self):
         if not self._record:
             raise Exception('cannot delete: no record')
 
-        self._interface.delete_agents([self._record.id])
+        await self._interface.delete_agents([self._record.id])
     
 
 class AgentSet():
@@ -271,18 +273,19 @@ class AgentSet():
     #def add(self, agents : List[Agent]):
     #    self._agents.extend(agents)
 
-    def register(self):
-        records=self._interface.add_agents([ (self._spec, self._count) ])
+    async def register(self):
+        ret=await self._interface.add_agents([ (self._spec, self._count) ])
+        records=ret.data
 
         for (r, agent) in zip(records, self._agents):
             agent._record=r
 
-    def delete(self):
+    async def delete(self):
         for agent in self._agents:
             if not agent._record:
                 raise Exception("cannot delete agent: no record")
     
-        self._interface.delete_agents([
+        await self._interface.delete_agents([
             agent._record for agent in self._agents
         ])
 

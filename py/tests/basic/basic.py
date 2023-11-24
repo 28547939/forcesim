@@ -73,10 +73,10 @@ async def main():
 
 
     # ensure we are configuring the instance starting from an empty/clean state
-    interface.reset()
+    await interface.reset()
 
     iter_block=config.iter_block_size if config.iter_block_size else 100
-    interface.configure(iter_block=iter_block)
+    await interface.configure(iter_block=iter_block)
 
     #if 'info_sequence' not in config:
     #    raise Exception('`info_sequence` missing from config')
@@ -120,7 +120,7 @@ async def main():
                 count=count
             )
 
-            agroup[name].register()
+            await agroup[name].register()
 
             if isinstance(subscriber_name, str):
                 raise NotImplementedError('')
@@ -146,8 +146,8 @@ async def main():
                 output_dir_path, name+'.png'
             ))
 
-        if (sconfig.type == subscriber_type_t.AGENT_ACTION and
-            sconfig.parameter is None):
+        if (sconfig.type == subscriber_type_t.AGENT_ACTION 
+            and sconfig.parameter is None):
 
             raise Exception(
                 f'AGENT_ACTION subscriber must have an agent ID parameter '
@@ -193,7 +193,12 @@ async def main():
             await create_subscriber(name)
 
     
-    interface.start()
+    try:
+        await interface.start()
+    # TODO structured exceptions so that we can reliably detect the difference b/w
+    # an already-started market and failure to start
+    except Interface.InterfaceException:
+        pass
 
     for info_list in info_sequence:
 
@@ -204,7 +209,7 @@ async def main():
             except KeyError as e:
                 print(f'info object {info_name} specified in info_sequence was not found - skipping')
 
-        interface.emit_info(info_obj)
+        await interface.emit_info(info_obj)
         await interface.run(iter_block)
         await interface.wait_for_stop()
         print('wait_for_stop completed')
