@@ -195,10 +195,11 @@ async def main():
     
     try:
         await interface.start()
-    # TODO structured exceptions so that we can reliably detect the difference b/w
-    # an already-started market and failure to start
-    except Interface.InterfaceException:
-        pass
+    except Interface.InterfaceException as e:
+        if e.error.code == error_code_t.Already_started:
+            pass
+        else:
+            raise e
 
     for info_list in info_sequence:
 
@@ -210,9 +211,9 @@ async def main():
                 print(f'info object {info_name} specified in info_sequence was not found - skipping')
 
         await interface.emit_info(info_obj)
+        print(f'about to run {iter_block} iterations')
         await interface.run(iter_block)
         await interface.wait_for_stop()
-        print('wait_for_stop completed')
 
 
 
@@ -230,7 +231,7 @@ async def main():
     print('outputting graphs')
 
     for (_, s) in subscribers.items():
-        s.listener.render_graph()
+        s.render_graph()
 
 
 
@@ -269,6 +270,5 @@ if __name__ == '__main__':
     loop=asyncio.get_event_loop()
     try:
         loop.run_until_complete(main())
-#        loop.run_forever()
     finally:
         loop.close()

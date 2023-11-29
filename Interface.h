@@ -16,37 +16,36 @@ class Interface;
 // RetVal is the type of each element in the map that is eventually returned to the client
 
 
+// global error codes that we can use to communicate a specific error condition in 
+// a response without requiring the client to match on the message
+// strings are used instead of numbers to make the errors clear in case a user is
+// reading the raw response
+enum class InterfaceErrorCode {
+    General_error,
+    Json_parse_error,
+    Json_type_error,
+    Multiple,
+    Already_started,
+    Not_found,
 
+    Agent_not_implemented,
+    Agent_config_error,
 
-/* TODO delete after compiling
-template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType, typename = 
-    std::enable_if_t<
-        (
-            std::is_same<HandlerType, list_helper_generator_t<InputItem, RetVal>> &&
-            std::is_same<RetKey, int>
-        ) || 
-        std::is_same<HandlerType, list_helper_handler_t<InputItem, RetKey, RetVal>> 
-    >
->
-// this function (template) is called by the main list_helper function
-// it just abstracts the difference in the way that list_helper_handler_t and list_helper_generator_t 
-//  are called and the values they return
-// this function returns a list_retmap_t container  to the list_helper.
-struct list_helper_adapter {
+    Subscriber_config_error,
+};  
 
-    void operator()(
-        HandlerType f, 
-        std::shared_ptr<Interface>,
-        std::deque<InputItem>&,
-        list_retmap_t<RetKey, RetVal>
-    );
-};
+std::map<enum InterfaceErrorCode, std::string> interface_error_code_str({
+    { InterfaceErrorCode::Already_started, "Already_started" },
+});
 
-        */
+inline void to_json(json& j, const enum InterfaceErrorCode x) {
+    j = interface_error_code_str[x];
+}
 
+using list_error_t = std::tuple<InterfaceErrorCode, std::string>;
 
 template<typename T>
-using list_ret_t = std::variant<T, std::string>;
+using list_ret_t = std::variant<T, list_error_t>;
 
 template<typename K, typename V>
 using list_retmap_t = std::map<K, list_ret_t<V>>;
@@ -130,15 +129,32 @@ class Interface : public std::enable_shared_from_this<Interface> {
     crow::SimpleApp crow_app;
 
     crow::response build_json_crow(
-        bool is_error, 
+        std::optional<InterfaceErrorCode> error_code, 
         std::string msg, 
         std::optional<json> data = std::nullopt,
         std::optional<int> http_code = std::nullopt
     );
+
+
+    static void 
+    handle_json_wrapper(
+        const crow::request&, crow::response&,
+        std::function<void(const crow::request& req, crow::response& res, json&)>
+    );
+
+    static void 
+    handle_json_array_wrapper(
+        const crow::request&, crow::response&,
+        std::function<void(const crow::request& req, crow::response& res, std::deque<json>&)>
+    );
     
+    
+    static std::optional<json>
+    handle_json(const crow::request&, crow::response&);
 
     static std::optional<std::deque<json>>
     handle_json_array(const crow::request&, crow::response&);
+
 
     Interface(std::shared_ptr<Market::Market>);
     inline static bool instantiated = false;
@@ -157,15 +173,16 @@ class Interface : public std::enable_shared_from_this<Interface> {
         access the instance pointer (Interface::instance)
     */
 
-    static crow::response crow__market_run(const crow::request& req);
-    static void crow__market_stop(crow::request&, crow::response&);
-    static void crow__market_wait_for_stop(crow::request&, crow::response&);
-    static void crow__market_configure(crow::request&, crow::response&);
-    static void crow__market_start(crow::request& req, crow::response& resp);
+    static void crow__market_run(const crow::request& req, crow::response&);
+    static void crow__market_stop(const crow::request&, crow::response&);
+    static void crow__market_wait_for_stop(const crow::request&, crow::response&);
 
-    static void crow__market_reset(crow::request& req, crow::response& resp);
+    static void crow__market_configure(const crow::request&, crow::response&);
+    static void crow__market_start(const crow::request& req, crow::response& resp);
 
-    static crow::response crow__get_price_history(const crow::request&);
+    static void crow__market_reset(const crow::request& req, crow::response& resp);
+
+    static void crow__get_price_history(const crow::request&, crow::response&);
 
 
     template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
@@ -304,7 +321,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
     static std::shared_ptr<Interface> get_instance(std::shared_ptr<Market::Market>);
 
     json build_json(
-        bool is_error, 
+        std::optional<InterfaceErrorCode> error_code,
         std::string msg, 
         std::optional<json> data = std::nullopt
     );
