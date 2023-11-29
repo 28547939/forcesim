@@ -545,6 +545,7 @@ Market::add_agent(std::unique_ptr<Agent> a) {
 }
 
 
+// false is indicated when the agent is not found
 std::map<agentid_t, bool>
 Market::del_agents(std::optional<std::deque<agentid_t>> ids) {
     std::lock_guard L(this->api_mtx);

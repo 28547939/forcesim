@@ -67,20 +67,28 @@ class Interface():
     """
     
     class interface_ret():
-        is_error : bool
         def __init__(self, resp, msg=None, data=None):
             self.resp = resp 
             self.msg = msg 
             self.data = data
 
     class Ok(interface_ret): 
-        is_error=False
+        pass
     class Error(interface_ret):
-        is_error=True
+        def __init__(self, error_code, *args, **kwargs):
+            self.error_code=error_code
+            super().__init__(*args, **kwargs)
 
 
     class InterfaceException(Exception):
-        pass
+        error : Interface.Error
+        def __init__(self, *args):
+            e=args.pop(0)
+            self.error=e
+            super().__init__()
+
+    # TODO need to be able to access the arguments from the handler...
+
 
     def __init__(self, remote_addr, remote_port):
         self.remote_addr = remote_addr
@@ -91,8 +99,8 @@ class Interface():
         return self.remote_addr +':'+ self.remote_port
 
     def _ok_or_raise(self, ret : interface_ret) -> Ok:
-        if ret.is_error: 
-            raise Interface.InterfaceException(ret.msg, ret.data)
+        if isinstance(ret, Interface.Error):
+            raise Interface.InterfaceException(ret)
         else:
             return ret
 
@@ -108,18 +116,45 @@ class Interface():
                 try:
                     json_resp = await resp.json(content_type=None)
 
-                    if json_resp['is_error'] == True:
-                        return Interface.Error(resp, json_resp['message'], json_resp['data'])
+                    error_code=json_resp['error_code']
+                    data=json_resp['data']
+                    if error_code != None:
+                        if error_code == error_code_t.Multiple:
+                            if isinstance(data, list):
+                                data_typed = [
+                                    (str_to_error_code(ec), msg)
+                                    for (ec, msg) in data
+                                ]
+
+                                return Interface.Error(resp, json_resp['message'], data_typed)
+
+                            elif isinstance(data, dict):
+                                # TODO
+                                raise NotImplementedError
+                            else:
+                                raise TypeError()
+
+                        else:
+                            return Interface.Error(resp, json_resp['message'], json_resp['data'])
                     else:
                         return Interface.Ok(resp, json_resp['message'], json_resp['data'])
 
                 except Interface.InterfaceException as e:
                     raise e
                 except KeyError as e:
-                    raise Interface.InterfaceException('could not parse JSON response' + e)
+                    err=Interface.Error(
+                        resp, 
+                        msg='could not parse JSON response: ' + e,
+                        data=None
+                    )
+                    raise Interface.InterfaceException(err)
                 except json.JSONDecodeError as e:
-                    data="Unable to parse JSON in server's response\nServer's response:\n\n%s\n" % resp.text
-                    raise Interface.InterfaceException(data)
+                    err=Interface.Error(
+                        resp,
+                        msg="Unable to parse JSON in server's response",
+                        data=resp.text
+                    )
+                    raise Interface.InterfaceException(err)
 
 
 

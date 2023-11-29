@@ -25,6 +25,13 @@ https://github.com/CrowCpp/Crow
 using json = nlohmann::json;
 using namespace std;
 
+/*
+change to errors codes in main body of response
+list helper / multi request: return (code, msg) tuples, set main error code to Multi
+in py, if multi, detect and return in the exception the (code, msg) items to client with the corresponding 
+    request data    
+
+*/
 
 namespace {
 
@@ -114,144 +121,158 @@ std::shared_ptr<Interface> Interface::get_instance(std::shared_ptr<Market::Marke
     return Interface::instance;
 }
 
-crow::response Interface::crow__market_run(const crow::request& req) {
+void Interface::crow__market_run(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
-    json jreq = json::parse(req.body);
 
-    std::optional<int> iter_count;
-    try {
-        iter_count = jreq["iter_count"];
-    } catch (std::exception& e) {
-        // TODO json exceptions
-        iter_count = std::nullopt;
-    }
+    interface->handle_json_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, json& jreq) {
 
-    interface->market->queue_op(
-        std::shared_ptr<Market::op<Market::op_t::RUN>> { new Market::op<Market::op_t::RUN> (iter_count) }
-    );
+        std::optional<int> iter_count;
+        try {
+            iter_count = jreq["iter_count"];
+        } catch (json::exception& e) {
+            iter_count = std::nullopt;
+        }
 
-    return interface->build_json_crow(false, "run request queued", std::nullopt);
+        interface->market->queue_op(
+            std::shared_ptr<Market::op<Market::op_t::RUN>> { new Market::op<Market::op_t::RUN> (iter_count) }
+        );
+
+        res = interface->build_json_crow(std::nullopt, "run request queued", std::nullopt);
+        res.end();
+    });
 }
 
 
-void Interface::crow__market_stop(crow::request& req, crow::response& resp) {
+void Interface::crow__market_stop(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
     interface->market->queue_op(
         std::shared_ptr<Market::op<Market::op_t::STOP>> { new Market::op<Market::op_t::STOP> {} }
     );
 
-    resp = interface->build_json_crow(false, "run request queued", std::nullopt);
-    resp.end();
+    res = interface->build_json_crow(std::nullopt, "stop request queued", std::nullopt);
+    res.end();
 }
 
 
-void Interface::crow__market_wait_for_stop(crow::request& req, crow::response& resp) {
+void Interface::crow__market_wait_for_stop(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
-    json jreq;
-    try {
-        jreq = json::parse(req.body);
-    } catch (json::parse_error& e) {
-        resp = interface->build_json_crow(true, std::string("JSON parse error: ") + e.what(), {});
-    }
+    interface->handle_json_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, json& jreq) {
 
-    std::optional<timepoint_t> tp;
-    try {
-        uintmax_t tmp = jreq["timepoint"];
-        tp = timepoint_t(tmp);
-    } catch (json::out_of_range& e) {
-        tp = std::nullopt;
-    }
-    // it appears that type_error is thrown if the request body is empty (null) - the
-    // libary interprets this as the 'timepoint' field being null
-    catch (json::type_error& e) {
-        tp = std::nullopt;
-    }
-
-    std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
-
-    if (actual_tp.has_value()) {
-        resp = interface->build_json_crow(false, "stopped", json::object({
-            { "timepoint", json(actual_tp.value().to_numeric()) }
-        }));
-    } else {
-
-        if (tp.has_value()) {
-            resp = interface->build_json_crow(true, "timed out", json::object({
-                { "limit", json(tp.value().to_numeric()) },
-            }));
-        } 
-        // currently this is "impossible"
-        else {
-            resp = interface->build_json_crow(true, 
-                "Market::wait_for_stop unexpectedly returned", {}
+        std::optional<timepoint_t> tp;
+        try {
+            uintmax_t tmp = jreq["timepoint"];
+            tp = timepoint_t(tmp);
+        } catch (json::out_of_range& e) {
+            res = interface->build_json_crow(
+                InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
             );
+            res.end();
+            return;
+        }
+        // it appears that type_error is thrown if the request body is empty (null) - the
+        // library interprets this as the 'timepoint' field being null
+        catch (json::type_error& e) {
+            res = interface->build_json_crow(
+                InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
+            );
+            res.end();
+            return;
         }
 
-    }
+        std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
 
+        if (actual_tp.has_value()) {
+            res = interface->build_json_crow(std::nullopt, "stopped", json::object({
+                { "timepoint", json(actual_tp.value().to_numeric()) }
+            }));
+        } else {
 
-    resp.end();
+            if (tp.has_value()) {
+                res = interface->build_json_crow(
+                    InterfaceErrorCode::General_error, "timed out", json::object({
+                    { "limit", json(tp.value().to_numeric()) },
+                }));
+            } 
+            // currently this is "impossible"
+            else {
+                res = interface->build_json_crow(
+                    InterfaceErrorCode::General_error, 
+                    "Market::wait_for_stop unexpectedly returned", {}
+                );
+            }
+
+        }
+
+        res.end();
+    });
 }
 
-void Interface::crow__market_configure(crow::request& req, crow::response& resp) {
+void Interface::crow__market_configure(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
-    json jreq = json::parse(req.body);
 
-    auto config = jreq.get<Market::Config>();
+    interface->handle_json_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, json& jreq) {
+        auto config = jreq.get<Market::Config>();
 
-    interface->market->configure(config);
+        interface->market->configure(config);
 
-    resp = interface->build_json_crow(false, "success", {});
-    resp.end();
+        res = interface->build_json_crow(std::nullopt, "success", {});
+        res.end();
+    });
 }
 
-void Interface::crow__market_start(crow::request& req, crow::response& resp) {
+void Interface::crow__market_start(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
     try {
         interface->market->start();
-        resp = interface->build_json_crow(false, "successfully started", {});
+        res = interface->build_json_crow(std::nullopt, "successfully started", {});
     } catch (std::logic_error& e) {
-        resp = interface->build_json_crow(true, 
-            "already started", {}, 500);
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Already_started, 
+            "already started", {}, 200
+        );
     }
 
-    resp.end();
+    res.end();
 }
 
-void Interface::crow__market_reset(crow::request& req, crow::response& resp) {
+void Interface::crow__market_reset(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
     
     interface->market->reset();
 
-    resp = interface->build_json_crow(false, "success", {});
-    resp.end();
+    res = interface->build_json_crow(std::nullopt, "success", {});
+    res.end();
 }
 
 // finished 
 // not tested
-crow::response Interface::crow__get_price_history(const crow::request& req) {
+void 
+Interface::crow__get_price_history(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
-    json jreq;
-    try {
-        jreq = json::parse(req.body);
-    } catch (json::parse_error& e) {
-        return interface->build_json_crow(true, std::string("JSON parse error: ") + e.what(), {});
-    }
+    interface->handle_json_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, json& jreq) {
 
-    bool erase = false;
-    try {
-        erase  = jreq["erase"];
-    } catch (json::out_of_range& e) {
-        return interface->build_json_crow(true, "missing `erase` argument", {});
-    }
+        bool erase = false;
+        try {
+            erase  = jreq["erase"];
+        } catch (json::out_of_range& e) {
+            return interface->build_json_crow(
+                InterfaceErrorCode::General_error, "missing `erase` argument", {}
+            );
+        }
 
-    auto history = interface->market->get_price_history(erase);
-    json data = json(*(history->to_map()));
-    return interface->build_json_crow(false, "success", data);
+        auto history = interface->market->get_price_history(erase);
+        json data = json(*(history->to_map()));
+        res = interface->build_json_crow(std::nullopt, "success", data);
+        res.end();
+    });
 }
 
 
@@ -293,25 +314,73 @@ struct list_json_ret_t<int> {
     json dump() { return json(this->data_ret); }
 };
 
+
+std::optional<json> Interface::handle_json(const crow::request& req, crow::response& res) {
+    auto interface = Interface::instance;
+
+    try {
+        return json::parse(req.body);
+    } catch (json::parse_error& e) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_parse_error, 
+            string("JSON parse error: ") + e.what(), {}, 400
+        );
+        res.end();
+        return std::nullopt;
+    }
+}
+
+void Interface::handle_json_wrapper(
+    const crow::request& req, crow::response& res,
+    std::function<void(const crow::request& req, crow::response& res, json&)> f
+) {
+    auto interface = Interface::instance;
+
+    auto jreq_opt = interface->handle_json(req, res);
+    if (!jreq_opt.has_value()) {
+        return;
+    }
+
+    auto jreq = jreq_opt.value();
+
+    f(req, res, jreq);
+}
+
 std::optional<std::deque<json>>
 Interface::handle_json_array(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
-    try {
-        auto jreq = json::parse(req.body);
+    // TODO possibly use wrapper with template return
+    auto jreq_opt = interface->handle_json(req, res);
+    if (!jreq_opt.has_value()) {
+        return std::nullopt;
+    }
+    auto jreq = jreq_opt.value();
 
-        if (!jreq.is_array()) {
-            res = interface->build_json_crow(true, std::string("request body must be JSON array"),  {}, 400);
-            res.end();
-            return std::nullopt;
-        }
-
-        return jreq.get<std::deque<json>>();
-    } catch (json::parse_error& e) {
-        res = interface->build_json_crow(true, string("JSON parse error: ") + e.what(), {}, 400);
+    if (!jreq.is_array()) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_type_error, 
+            std::string("request body must be JSON array"),  {}, 400);
         res.end();
         return std::nullopt;
     }
+
+    return jreq.get<std::deque<json>>();
+}
+
+void Interface::handle_json_array_wrapper(
+    const crow::request& req, crow::response& res,
+    std::function<void(const crow::request& req, crow::response& res, std::deque<json>&)> f
+) {
+    auto interface = Interface::instance;
+
+    auto jreq_opt = interface->handle_json_array(req, res);
+    if (!jreq_opt.has_value())
+        return;
+
+    auto jreq = jreq_opt.value();
+
+    f(req, res, jreq);
 }
 
 template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
@@ -341,7 +410,7 @@ void Interface::list_helper(
             return j.get<InputItem>();
         });
     } catch (std::exception& e) {
-        res = interface->build_json_crow(true, 
+        res = interface->build_json_crow(InterfaceErrorCode::Json_type_error, 
             string("encountered error during type conversion: ") + e.what(), 
             most_recent_conversion, 
         400);
@@ -349,13 +418,6 @@ void Interface::list_helper(
         return;
     }
 
-
-    // TODO catch possible conversion error for InputItem
-
-
-    /*  string at position i is the error, if any, which occurred for 
-        entry i in the config list
-    */
     list_retmap_t<RetKey, RetVal> retmap;
 
     list_helper_adapter<InputItem, RetKey, RetVal, HandlerType> adapter;
@@ -367,12 +429,10 @@ void Interface::list_helper(
 
     int error_count = std::accumulate(retmap.begin(), retmap.end(), false, 
         [](int acc, auto& pair) { 
-            return acc + (std::holds_alternative<std::string>(pair.second) ? 1 : 0); 
+            return acc + (std::holds_alternative<list_error_t>(pair.second) ? 1 : 0); 
         }
     );
 
-    //std::deque<json> data_ret;
-    //typename std::map<RetKey, json> data_ret;
     list_json_ret_t<RetKey> data_ret;
 
     for (auto& pair : retmap) {
@@ -387,7 +447,9 @@ void Interface::list_helper(
     }
 
     res = interface->build_json_crow(
-        error_count > 0 ? true : false,
+        error_count > 0 
+            ? std::optional<enum InterfaceErrorCode>(InterfaceErrorCode::Multiple) 
+            : std::nullopt,
         error_count > 0 
             ? std::string("completed with ") + std::to_string(error_count) + std::string(" errors")
             : "completed without errors"
@@ -404,7 +466,8 @@ void Interface::list_helper(
 //  in the list_generator function, pass the adapter inline as a lambda
 // current error is that you're missing an int template argument below
 
-void Interface::crow__add_agents(const crow::request& req, crow::response& res) {
+void 
+Interface::crow__add_agents(const crow::request& req, crow::response& res) {
 
     Interface::list_generator_helper<agent_config_item, std::deque<Market::agentid_t>>
         (req, res, 
@@ -413,32 +476,37 @@ void Interface::crow__add_agents(const crow::request& req, crow::response& res) 
         auto factory_element = agent_factory.find(spec.type);
 
         if (factory_element == agent_factory.end()) {
-            return std::string("Agent factory not implemented: ") + spec.type;
+            return std::tuple<enum InterfaceErrorCode, std::string> ({ 
+                InterfaceErrorCode::Agent_not_implemented,
+                std::string("factory not implemented: ") + spec.type
+            });
         }
 
-        try {
-            std::deque<Market::agentid_t> ids;
-            for (int i = 0; i < spec.count; i++) {
+        std::deque<Market::agentid_t> ids;
+        for (int i = 0; i < spec.count; i++) {
 
-                try {
-                    unique_ptr<Agent> agent = (factory_element->second)(spec.config);
-                    ids.push_back(interface->market->add_agent(std::move(agent)));
-                } 
-                // something wrong with a value in AgentConfig (spec.config)
-                catch (std::invalid_argument& e) {
-                    return e.what();
-                }
-                // missing value from AgentConfig
-                catch (json::out_of_range& e) {
-                    return e.what();
-                }
-
+            try {
+                unique_ptr<Agent> agent = (factory_element->second)(spec.config);
+                ids.push_back(interface->market->add_agent(std::move(agent)));
+            } 
+            // something wrong with a value in AgentConfig (spec.config)
+            catch (std::invalid_argument& e) {
+                return std::tuple<enum InterfaceErrorCode, std::string> ({
+                    InterfaceErrorCode::Agent_config_error,
+                    e.what()
+                });
+            }
+            // missing value from AgentConfig
+            catch (json::out_of_range& e) {
+                return std::tuple<enum InterfaceErrorCode, std::string> ({
+                    InterfaceErrorCode::Agent_config_error,
+                    e.what()
+                });
             }
 
-            return ids;
-        } catch (json::parse_error& e) {
-            return std::string("JSON parse error: ")+ e.what();
         }
+
+        return ids;
     });
 }
 
@@ -458,7 +526,11 @@ void Interface::crow__del_agents(const crow::request& req, crow::response& res) 
             return {
                 pair.first,
                 pair.second == true ? 
-                    list_ret_t<bool>(true) : list_ret_t<bool>(std::string("failed"))
+                    list_ret_t<bool>(true) : list_ret_t<bool>(
+                        std::tuple<enum InterfaceErrorCode, std::string>({ 
+                            InterfaceErrorCode::Not_found, "agent not found" 
+                        })
+                    )
             };
         });
 
@@ -467,15 +539,13 @@ void Interface::crow__del_agents(const crow::request& req, crow::response& res) 
 }
 
 
-// list agents
-
 void Interface::crow__list_agents(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
     auto list = interface->market->list_agents();
 
     res = interface->build_json_crow(
-        false,
+        std::nullopt,
         "success",
         json(list)
     );
@@ -488,43 +558,43 @@ void Interface::crow__list_agents(const crow::request& req, crow::response& res)
 // TODO - handle the case where the response is large enough to require streaming
 void Interface::crow__get_agent_history(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
-    json jreq;
-    try {
-        jreq = json::parse(req.body);
-    } catch (json::parse_error& e) {
-        res = interface->build_json_crow(true, "error parsing JSON request body", {}, 400);
+
+    interface->handle_json_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, json& jreq) {
+
+        int id;
+        try {
+            id = jreq["id"].get<int>();
+        } catch (json::out_of_range& e) {
+            res = interface->build_json_crow(
+                InterfaceErrorCode::General_error, "agent ID not specified", {}, 400
+            );
+            res.end();
+            return;
+        }
+
+        auto history = interface->market->get_agent_history(id, false);
+
+        if (!history.has_value()) {
+            res = interface->build_json_crow(InterfaceErrorCode::Not_found, "agent not found", {
+                { "id", id }
+            });
+            res.end();
+            return;
+        }
+
+        res = interface->build_json_crow(
+            std::nullopt, 
+            "success",
+            json::object({
+                {"id", id },
+                {"history", json(*(history.value()->to_map())) },
+            })
+        );
         res.end();
-        return;
-    }
 
-    int id;
-    try {
-        id = jreq["id"].get<int>();
-    } catch (json::out_of_range& e) {
-        res = interface->build_json_crow(true, "agent ID not specified", {}, 400);
-        res.end();
-        return;
-    }
+    });
 
-    auto history = interface->market->get_agent_history(id, false);
-
-    if (!history.has_value()) {
-        res = interface->build_json_crow(true, "agent not found", {
-            { "id", id }
-        });
-        res.end();
-        return;
-    }
-
-    res = interface->build_json_crow(
-        false, 
-        "success",
-        json::object({
-            {"id", id },
-            {"history", json(*(history.value()->to_map())) },
-        })
-    );
-    res.end();
 }
 
 
@@ -535,63 +605,60 @@ void Interface::crow__delete_agent_history(const crow::request& req, crow::respo
 
 }
 
+// this is done manually instead with list_generator_helper so that we can
+// submit the entire list of Info together as one infoset_t
 void Interface::crow__emit_info(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
-    json jreq = json::parse(req.body);
 
-    auto j_input_opt = Interface::handle_json_array(req, res);
-    if (!j_input_opt.has_value()) {
-        return;
-    }
+    interface->handle_json_array_wrapper(req, res, 
+    [&interface](const crow::request& req, crow::response& res, std::deque<json>& j_input) {
+        std::deque<std::pair<std::string, json> > err_ret;
 
-    std::deque<json> j_input = j_input_opt.value();
+        Info::infoset_t infoset;
 
-    std::deque<std::pair<std::string, json> > err_ret;
+        int i = 0;
+        for (json j : j_input) {
+            try {
+                auto iptr = j.get<std::shared_ptr<Info::Abstract>>();
+                infoset.insert(infoset.begin(), iptr);
 
-    Info::infoset_t infoset;
-
-    int i = 0;
-    for (json j : j_input) {
-        try {
-            auto iptr = j.get<std::shared_ptr<Info::Abstract>>();
-            infoset.insert(infoset.begin(), iptr);
-
-        } catch (json::parse_error& e) {
-            std::ostringstream estr;
-            estr << "invalid info object: " << e.what();
-            err_ret.push_back({ estr.str(), j });
+            } catch (json::parse_error& e) {
+                std::ostringstream estr;
+                estr << "invalid info object: " << e.what();
+                err_ret.push_back({ estr.str(), j });
+            }
+            
+            i++;
         }
-        
-        i++;
-    }
 
-    if (err_ret.size() > 0) {
-        res = interface->build_json_crow(
-            true, 
-            "encountered errors parsing Info objects",
-            json(err_ret),
-            400
-        );
-    } else {
-        auto ret = interface->market->emit_info(infoset);
-
-        if (std::holds_alternative<std::string>(ret)) {
+        if (err_ret.size() > 0) {
             res = interface->build_json_crow(
-                true, 
-                "Market::emit_info encountered error: " + std::get<std::string>(ret),
-                std::nullopt,
+                InterfaceErrorCode::Json_parse_error, 
+                "encountered errors parsing Info objects",
+                json(err_ret),
                 400
             );
-        } else if (std::holds_alternative<timepoint_t>(ret)) {
-            res = interface->build_json_crow(
-                false, 
-                "success",
-                json::object({{ "timepoint", std::get<timepoint_t>(ret) }})
-            );
-        }
-    }
+        } else {
+            auto ret = interface->market->emit_info(infoset);
 
-    res.end();
+            if (std::holds_alternative<std::string>(ret)) {
+                res = interface->build_json_crow(
+                    InterfaceErrorCode::General_error,
+                    "Market::emit_info encountered error: " + std::get<std::string>(ret),
+                    std::nullopt,
+                    400
+                );
+            } else if (std::holds_alternative<timepoint_t>(ret)) {
+                res = interface->build_json_crow(
+                    std::nullopt, 
+                    "success",
+                    json::object({{ "timepoint", std::get<timepoint_t>(ret) }})
+                );
+            }
+        }
+
+        res.end();
+    });
 }
 
 void Interface::crow__add_subscribers(const crow::request& req, crow::response& res) {
@@ -606,12 +673,27 @@ void Interface::crow__add_subscribers(const crow::request& req, crow::response& 
             std::shared_ptr<AbstractFactory> factory = factory_factory(c.parameter);
 
             auto ret_deque = Subscriber::Subscribers::add({{ factory, config }});
-            return ret_deque.at(0);
+            auto entry = ret_deque.at(0);
+
+            return std::visit([](auto&& entry) -> list_ret_t<Subscriber::id_t> {
+                using T = decltype(entry);
+                if constexpr (std::is_same_v<T, Subscriber::id_t>) 
+                    return entry;
+                else if constexpr (std::is_same_v<T, std::string>)
+                    return { InterfaceErrorCode::General_error, entry };
+            }, entry);
         
         } catch (json::exception& e) {
-            return std::string("invalid configuration: ") + e.what();
+
+            return std::tuple<enum InterfaceErrorCode, std::string> ({
+                InterfaceErrorCode::Subscriber_config_error,
+                std::string("JSON error when processing configuration: ") + e.what()
+            });
         } catch (std::invalid_argument& e) {
-            return std::string("invalid configuration: ") + e.what();
+            return std::tuple<enum InterfaceErrorCode, std::string> ({
+                InterfaceErrorCode::Subscriber_config_error,
+                std::string("invalid configuration: ") + e.what()
+            });
         }
     });
 }
@@ -637,7 +719,11 @@ void Interface::crow__del_subscribers(const crow::request& req, crow::response& 
                 case s_t::DOES_NOT_EXIST:
                     ret.insert({ 
                         pair.first, 
-                        std::string("provided ID does not exist: ")+ std::to_string(pair.first)
+
+                        std::tuple<enum InterfaceErrorCode, std::string> ({
+                            InterfaceErrorCode::Not_found,
+                            std::string("provided ID does not exist: ")+ std::to_string(pair.first)
+                        })
                     });
                 break;
             }
@@ -656,7 +742,7 @@ void Interface::crow__list_subscribers(const crow::request& req, crow::response&
     std::deque<Ss::list_entry_t> x = Ss::list();
 
     res = interface->build_json_crow(
-        false, 
+        std::nullopt, 
         "success",
         json(x)
     );
@@ -689,7 +775,7 @@ void Interface::crow__show_market_perf_data(const crow::request& req, crow::resp
     });
 
     res = interface->build_json_crow(
-        false, 
+        std::nullopt, 
         "success",
         json(output)
     );
@@ -701,7 +787,7 @@ void Interface::crow__reset_market_perf_data(const crow::request& req, crow::res
     interface->market->clear_perf_map();
 
     res = interface->build_json_crow(
-        false, 
+        std::nullopt, 
         "success",
         {}
     );
@@ -715,17 +801,10 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
     market(m)
 {
 
-        //this->crow_handlers = new Crow_handlers(shared_from_this());
-        //this->crow_handlers = std::make_shared<Crow_handlers>(x);
-
 /*
     CROW_ROUTE(this->crow_app, "/version")([](){
         crow::json::wvalue x({{"version", 0.1}});
         return x;
-    });
-
-    CROW_ROUTE(this->crow_app, "/market/run")
-    .methods("POST"_method)([this](const crow::request& req) {
     });
     */
 
@@ -798,9 +877,9 @@ bool Interface::start() {
     }
 }
 
-json Interface::build_json(bool is_error, std::string msg, std::optional<json> data) {
+json Interface::build_json(std::optional<enum InterfaceErrorCode> error_code, std::string msg, std::optional<json> data) {
     return {
-        { "is_error", is_error },
+        { "error_code", error_code.value_or(json {}) },
         { "message", msg },
         { "api_version", this->api_version },
         { "data", (data ? *data : json {})}
@@ -808,14 +887,15 @@ json Interface::build_json(bool is_error, std::string msg, std::optional<json> d
 };
 
 crow::response Interface::build_json_crow(
-    bool is_error, std::string msg, 
-    std::optional<json> data, std::optional<int> http_code 
+    std::optional<enum InterfaceErrorCode> error_code,
+    std::string msg, std::optional<json> data, std::optional<int> http_code 
     ) {
 
-        json j = this->build_json(is_error, msg, data);
+        json j = this->build_json(error_code, msg, data);
 
         return crow::response(
             http_code ? *http_code : 200,
             j.dump()
         );
 }
+

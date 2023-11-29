@@ -192,18 +192,16 @@ class Subscriber():
         try: 
             ret=await (self._interface.add_subscribers([self._config]))
         except Interface.InterfaceException as e: 
-            print('Aborting subscriber creation')
-            print(e)
+            print('Subscriber.start: aborting')
+            print(e.error)
+            return
 
         (s_r)=ret.data[0]
 
-        print('subscriber record: %s' % s_r)
+        #print('subscriber record: %s' % s_r)
         self.record=s_r
 
         t=asyncio.create_task(self.listener._start_endpoint())
-
-        print('started')
-
         await t
 
     async def delete(self):
@@ -222,6 +220,19 @@ class Subscriber():
     def remove_graph(self):
         self.listener.remove_graph()
         del(self._graph)
+
+    def render_graph(self):
+        self.listener.render_graph()
+    
+    def has_graph(self):
+        try:
+            return isinstance(self.listener._graph, Graph)
+        except AttributeError:
+            return False
+
+    async def wait_flushed(self):
+        await self.listener.wait_flushed()
+
 
     """
     TODO - allow the subscriber to pass on received data to other components

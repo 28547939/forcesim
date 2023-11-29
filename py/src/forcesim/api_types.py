@@ -8,6 +8,13 @@ import numpy
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
 
+class error_code_t(Enum):
+    Already_started = auto()
+
+    def __str__(self):
+        return self.name
+
+
 class agentclass_t(Enum):
     TrivialAgent = auto()
     ModeledCohortAgent_v1 = auto()
@@ -49,6 +56,9 @@ def str_to_subscriber_type(s : str):
 
 def str_to_infotype(s : str):
     return infotype_t.__getattr__(s)
+
+def str_to_error_code(s : str):
+    return error_code_t.__getattr__(s)
 
 
 #@dataclass(kw_only=True)

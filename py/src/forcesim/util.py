@@ -22,7 +22,6 @@ from .classes import *
 
 
 
-
     
 
 def load_config_yaml(filename) -> Config:
@@ -81,6 +80,7 @@ def do_load_json_recursive(path, cls):
 
 
 class AgentLoader(JsonLoader):
+    @staticmethod
     def load(filename) -> Dict[str, Tuple[AgentSpec,Optional[str]] ]:
         with open(filename, 'r') as f:
             conf=json.load(f)
@@ -117,6 +117,7 @@ class AgentLoader(JsonLoader):
 
 
 class SubscriberLoader(JsonLoader):
+    @staticmethod
     def load(filename) -> Dict[str, SubscriberConfig]:
         with open(filename, 'r') as f:
             conf=json.load(f)
@@ -137,6 +138,7 @@ class SubscriberLoader(JsonLoader):
 
 
 class InfoLoader(JsonLoader):
+    @staticmethod
     def load(filename) -> Dict[str, Info]:
         with open(filename, 'r') as f:
             conf=json.load(f)
