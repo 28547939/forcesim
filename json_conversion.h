@@ -54,6 +54,12 @@ namespace Market {
 
 void to_json(json& j, const AgentAction act);
 
+void to_json(json& j, const numeric_id<market_numeric_id_tag> id);
+void to_json(json& j, const numeric_id<subscriber_numeric_id_tag> id);
+
+void from_json(const json& j, numeric_id<market_numeric_id_tag>& id);
+void from_json(const json& j, numeric_id<subscriber_numeric_id_tag>& id);
+
 
 void from_json(const json& j, agent_config_item& c);
 void from_json(const json& j, subscriber_config_item& c);

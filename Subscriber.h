@@ -36,7 +36,7 @@ namespace ba = boost::asio;
 // record types of price_t, AgentAction respectively 
 
 // subscriber ID
-typedef int id_t;
+typedef numeric_id<subscriber_numeric_id_tag> id_t;
 
 // type of subscriber - corresponds to AgentAction, price_t, or Info::infoset_t as the 
 // actual type of the records processed by the subscriber
@@ -181,7 +181,6 @@ class AbstractSubscriber {
     std::shared_ptr<Endpoint> endpoint;
     std::recursive_mutex mtx;
     std::condition_variable_any wait_cv;
-    static id_t next_id;
 
     public:
     const Config config;
@@ -194,7 +193,8 @@ class AbstractSubscriber {
 
     // the cursor is the timepoint associated with the most recent record that has been
     //  processed by the subscriber; the next timepoint to processed will be 
-    //  this->cursor + `granularity`
+    //  this->cursor + `granularity`, unless the cursor is nullopt, in which case
+    //  the next timepoint to be processed will be 0
     // where `granularity` is the granularity specified in this->config.
     timepoint_t cursor;
 
@@ -258,16 +258,18 @@ class AbstractSubscriber {
     //      in its internal data structure, but before the records have been converted to JSON
     //      and emitted to an endpoint.
     //      to wait for that point in time, use wait_flag(subscriber_flag_t::Flushed)
-    // the optional argument will cause us to additionally wait until the cursor has reached
-    //  the specified timepoint
-    //      note that, when the Market stops, the cursor will be less than the current Market time 
-    //          iff $granularity > 1, in which providing the Market's current time to wait() will
+    // the optional argument will cause us to additionally wait until the subscriber has processed
+    //  records up to and including the specified timepoint
+    //      note that, when the Market stops, the subscriber will stop reading at a point less than
+    //          the Market's current time iff $granularity > 1, in which case providing the Market's
+    //          current time to wait() will
     //          result in waiting indefinitely (until the Market restarts and passes that time)
     virtual void wait(const std::optional<timepoint_t> t) final {
         std::unique_lock L(this->mtx);
 
         this->wait_cv.wait(L, [t, this]() {
-            return t.has_value() ? this->cursor >= t : true;
+            // cursor represents next value to be read
+            return t.has_value() ? this->cursor - this->config.granularity >= t : true;
         });
     }
 
@@ -333,7 +335,7 @@ class AbstractSubscriber {
 // methods
 class Subscribers {
     // subscribers are stored here
-    static inline std::unordered_map<id_t, std::unique_ptr<AbstractSubscriber>> idmap;
+    static inline std::unordered_map<id_t, std::unique_ptr<AbstractSubscriber>, id_t::Key> idmap;
     // mutex for idmap
     static inline std::recursive_mutex it_mtx;
 
@@ -498,15 +500,18 @@ class Base_subscriber : public AbstractSubscriber {
     // were errors during the loop, or empty entries.
     //
     // The period of time processed is always 
-    //  ending cursor  -  starting cursor
+    //  ending cursor  -  (starting cursor   -   granularity)
     virtual std::pair<uintmax_t, uintmax_t>
     update(std::shared_ptr<Market::Market> m, const timepoint_t& m_now) final {
         std::unique_lock L { this->mtx, std::defer_lock };
         L.lock();
 
-        auto live_cursor = this->factory->get_iterator(m, this->cursor);
+        auto granularity = this->config.granularity;
 
+        // cursor is the next unread element, as set during the previous call to update, or
+        /// 0 if this is the first time
         timepoint_t tp = this->cursor;
+        // TODO check in range
 
         if (tp >= m_now) {
             std::ostringstream e;
@@ -519,7 +524,8 @@ class Base_subscriber : public AbstractSubscriber {
             // caught in Subscribers::update
         }
 
-        auto granularity = this->config.granularity;
+        auto live_cursor = this->factory->get_iterator(m, tp);
+
         int new_pending_records = 0;
         for ( ; tp < m_now; tp += granularity, live_cursor += granularity) {
 
@@ -532,13 +538,11 @@ class Base_subscriber : public AbstractSubscriber {
             }
         }
 
-
-        // update our cursor to the timepoint of the latest record processed
-        // after the final iteration the for loop adds one unit of granularity, bringing us
-        // to tp >= m_now and exiting the loop, so we account for that here: the "cursor"
-        // needs to point to the last element that we have processed
-        uintmax_t period = tp - this->cursor - granularity;
-        this->cursor += period;
+        // need to add granularity to account for the period elapsed between the 
+        // last record processed during the previous invocation and the first record
+        // processed during this invocation - this is exactly equal to granularity
+        uintmax_t period = tp - this->cursor + granularity;
+        this->cursor = tp;
 
         VLOG(9) << "subscriber updated " << new_pending_records << " records";
 
@@ -684,7 +688,7 @@ struct Factory : AbstractFactory
         std::lock_guard L(id_mtx);
 
         if (id.has_value()) {
-            VLOG(7) << "deleting subscriber from idmap  ID=" << id.value();
+            VLOG(7) << "deleting subscriber from idmap  ID=" << id.value().to_string();
 
             for (auto it = idmap.begin() ; it != idmap.end() ; it++) {
                 auto& set = it->second;

@@ -192,18 +192,18 @@ Subscribers::add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair) {
         s_ptr->flags({{ subscriber_flag_t::Flushed }});
 
         Subscribers::idmap.insert({ id, std::move(s_ptr) });
-        VLOG(5) << "added subscriber with ID " << id;
+        VLOG(5) << "added subscriber with ID " << id.to_string();
 
         EndpointConfig& ec = config.endpoint;
         auto it = Endpoints::endpoints.find(ec);
 
         if (it == Endpoints::endpoints.end()) {
-            VLOG(7) << "creating new endpoint for subscriber with ID=" << id;
+            VLOG(7) << "creating new endpoint for subscriber with ID=" << id.to_string();
 
             std::shared_ptr<Endpoint> endpoint(new Endpoint(ec));
             Endpoints::endpoints.insert({ ec, endpoint });
         } else {
-            VLOG(7) << "using existing endpoint for subscriber with ID=" << id;
+            VLOG(7) << "using existing endpoint for subscriber with ID=" << id.to_string();
         }
 
         return id;
@@ -330,13 +330,14 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
                 auto endpoint = Endpoints::endpoints.find(s->config.endpoint);
                 if (endpoint == Endpoints::endpoints.end()) {
-                    LOG(ERROR) << "did not find any endpoints for subscriber with ID=" << s->id;
+                    LOG(ERROR) << "did not find any endpoints for subscriber with ID=" 
+                        << s->id.to_string();
                 } else {
                     for (auto& json_ptr : json_records) {
                         (*endpoint).second->emit(std::move(json_ptr));
                     }
 
-                    VLOG(9) << "emitted data from subscriber with ID=" << s->id;
+                    VLOG(9) << "emitted data from subscriber with ID=" << s->id.to_string();
                 }
             }
 
@@ -363,7 +364,8 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
 
 AbstractSubscriber::AbstractSubscriber(Config& c)
-    : config(c), id(AbstractSubscriber::next_id++) 
+//    : config(c), id(AbstractSubscriber::next_id++) 
+    : config(c), id(id_t {}) 
 {
 }
 
@@ -375,9 +377,6 @@ void AbstractSubscriber::reset(const timepoint_t& t) {
     std::lock_guard { this->mtx };
     this->cursor = t;
 }
-
-id_t AbstractSubscriber::next_id = 0;
-
 
 
 

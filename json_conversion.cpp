@@ -61,6 +61,22 @@ namespace Market {
     }
 };
 
+
+// this is unfortunate - acceptable for now
+void to_json(json& j, const numeric_id<market_numeric_id_tag> id) {
+    j = json(id.to_numeric());
+}
+void to_json(json& j, const numeric_id<subscriber_numeric_id_tag> id) {
+    j = json(id.to_numeric());
+}
+void from_json(const json& j, numeric_id<market_numeric_id_tag>& id) {
+    id = numeric_id<market_numeric_id_tag>(j.get<unsigned int>());
+}
+void from_json(const json& j, numeric_id<subscriber_numeric_id_tag>& id) {
+    id = numeric_id<subscriber_numeric_id_tag>(j.get<unsigned int>());
+}
+
+
 void to_json(json& j, const AgentAction act) {
     j = json();
     j["direction"] = json(act.direction == Direction::UP ? "UP" : "DOWN");

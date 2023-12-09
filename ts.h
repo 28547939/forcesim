@@ -466,6 +466,8 @@ class ts {
             this->_bounds.second = _bounds_tmp.second;
 
             this->iter = src.seq.begin() + (tp - src._first_tp);
+
+            // cursor is initialized to 0
         }
 
         view(const view&) = default;
@@ -476,7 +478,7 @@ class ts {
             return this->_bounds;
         }
 
-        bool check__bounds(const timepoint_t& tp) {
+        bool check_bounds(const timepoint_t& tp) {
             return 
                 tp >= this->_bounds.first 
                 && (this->_bounds.second.has_value() 
@@ -492,9 +494,9 @@ class ts {
 
         // seeking in a view (not sparse_view) is linear
         void seek_to(const timepoint_t& tp) {
-            if (!check__bounds(tp)) {
+            if (!check_bounds(tp)) {
                 std::ostringstream e;
-                e << "seek_to: check_bouds failed tp=" << std::to_string(tp.to_numeric());
+                e << "seek_to: check_bounds failed tp=" << std::to_string(tp.to_numeric());
                 throw std::out_of_range(e.str());
             }
 

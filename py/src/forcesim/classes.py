@@ -28,8 +28,8 @@ import asyncio
 
 from .api_types import *
 from .interface import Interface
-
-
+import logging
+from . import logging as forcesim_logging
 
 
 """
@@ -98,14 +98,15 @@ SubscriberRecord represents a subscriber that has been registered with the simul
 """
 class Subscriber():
 
+
     class Listener():
 
-        _sockets = {}
+        _socket : Any
+        _logger : logging.Logger
 
         class subscriber_protocol:
-            def __init__(self, listener_obj, t : subscriber_type_t) -> None:
-                self._listener = listener_obj
-                self._subscriber_type = t
+            def __init__(self, subscriber_obj):
+                self._subscriber = subscriber_obj 
 
             def connection_made(self, transport):
                 self.transport = transport
@@ -116,52 +117,46 @@ class Subscriber():
 
                 try:
                     struct=json.loads(message)
-                    points=struct[str(self._subscriber_type)]
+                    points=struct[str(self._subscriber._config.type)]
 
                     if points == []:
-                        print('received empty record - flushed')
-                        self._listener._flushed.set()
+                        self._subscriber._logger.debug('received empty record - flushed')
+                        self._subscriber._flushed_wait.set()
+
                     else:
-                        print('subscriber: received %s points' % (len(points)))
-                        self._listener._graph.add_points(points)
+                        self._subscriber._logger.info(
+                            f'subscriber ({self._subscriber._config.type}): received '
+                            +f'%s points' % (len(points))
+                        )
+                        self._subscriber.add_points(points)
                 except json.JSONDecodeError as e:
                     print(e)
 
-        def __init__(self, s : SubscriberConfig):
-            self._subscriber_config = s
-            self._flushed = asyncio.Event()
-
-        def setup_graph(self, graph):
-            self._graph = graph
-
-        def remove_graph(self):
-            del(self._graph)
-
-        def render_graph(self, path=None):
-            self._graph.to_file(path)
-        
-        async def wait_flushed(self):
-            await self._flushed.wait()
-            self._flushed.clear()
+        def __init__(self, subscriber_obj):
+            self._subscriber = subscriber_obj
 
         async def _start_endpoint(self):
-            addr=self._subscriber_config.addr
-            port=self._subscriber_config.port
+            addr=self._subscriber._config.addr
+            port=self._subscriber._config.port
 
-            print(f"subscriber UDP server starting at {addr}:{port}")
+            self._subscriber._logger.info(f"subscriber UDP server starting at {addr}:{port}")
 
             loop = asyncio.get_running_loop()
 
-            await loop.create_datagram_endpoint(
-                lambda: self.subscriber_protocol(self, self._subscriber_config.type),
+            self._socket=await loop.create_datagram_endpoint(
+                lambda: self.subscriber_protocol(self._subscriber),
                 local_addr=(addr, port)
             )
 
 
         def _destroy_listener(self):
-            pass
+            del(self._socket)
 
 
+
+    _flushed_wait : Any
+    _record_count_wait : Dict[int, Tuple[int, asyncio.Event]] = {}
+    _points : List = []
 
     def __init__(self, i : Interface, config : SubscriberConfig, graph : Optional[Graph] = None):
         """
@@ -180,9 +175,12 @@ class Subscriber():
 
         self._interface=i
         self._config=config
+        self._logger=forcesim_logging.get_logger(f'Subscriber({config.type})')
 
-        s_l = Subscriber.Listener(config)
+        s_l = Subscriber.Listener(self)
         self.listener=s_l
+
+        self._flushed_wait = asyncio.Event()
 
         if graph:
             self.setup_graph(graph)
@@ -190,48 +188,83 @@ class Subscriber():
 
     async def start(self):
         try: 
-            ret=await (self._interface.add_subscribers([self._config]))
+            ret=await self._interface.add_subscribers([self._config])
         except Interface.InterfaceException as e: 
-            print('Subscriber.start: aborting')
-            print(e.error)
-            return
+            if e.error.error_code == error_code_t.Multiple:
+                if ret[0][0] == error_code_t.Subscriber_config_error:
+                    self._logger.error('Subscriber_config_error: %s (%s)', 
+                        ret[0][1], self._config
+                    )
+                else:
+                    raise e
+            else:
+                raise e
 
-        (s_r)=ret.data[0]
-
-        #print('subscriber record: %s' % s_r)
+        #(s_r)=ret.data[0]
+        s_r=ret.data[0]
         self.record=s_r
 
-        t=asyncio.create_task(self.listener._start_endpoint())
-        await t
+        self._logger.info('successfully started subscriber (id=%s)', self.record.id)
+        self._logger.debug('subscriber record=%s', self.record)
+
+        await asyncio.create_task(self.listener._start_endpoint())
 
     async def delete(self):
         await self._interface.del_subscribers(self.record.id)
         del(self.record)
         self.remove_graph()
 
+    def add_points(self, points):
+        #self._logger.debug(f'points: {points}')
+        self._points.extend(points)
+        if self._graph:
+            self._graph.add_points(points)
+
+        for (count, evs) in self._record_count_wait.items():
+            if len(self._points) >= count:
+                for ev in evs:
+                    ev.set()
+
     """
         Configure this subscriber instance to emit received data to the given Graph
         Only one Graph can be associated with the subscriber at one time
     """
     def setup_graph(self, graph : Graph):
-        self.listener.setup_graph(graph)
         self._graph=graph
 
     def remove_graph(self):
-        self.listener.remove_graph()
+        #self.listener.remove_graph()
         del(self._graph)
 
-    def render_graph(self):
-        self.listener.render_graph()
+    def render_graph(self, path=None):
+        #self.listener.render_graph()
+        self._graph.to_file(path)
     
     def has_graph(self):
         try:
-            return isinstance(self.listener._graph, Graph)
+            if isinstance(self.listener._graph, Graph):
+                return True
+            else:
+                raise TypeError('has_graph: subscriber listener has a non-Graph _graph attribute')
         except AttributeError:
             return False
 
     async def wait_flushed(self):
-        await self.listener.wait_flushed()
+        if not self._flushed_wait.is_set():
+            await self._flushed_wait.wait()
+
+        self._flushed_wait.clear()
+
+    async def wait_record_count(self, count : int):
+        ev=asyncio.Event()
+        if count in self._record_count_wait:
+            self._record_count_wait[count].append(ev)
+        else:
+            self._record_count_wait[count]=[ ev ]
+
+        if not ev.is_set():
+            await ev.wait()
+        self._record_count_wait[count].remove(ev)
 
 
     """
@@ -242,29 +275,31 @@ class Subscriber():
         #pass
 
 
+
 class Agent():
     def __init__(self, i : Interface, spec : AgentSpec):
         self._interface=i
         self._spec=spec
+        self._logger=forcesim_logging.get_logger('Agent')
     
     async def register_one(self):
-        if self._record:
-            raise Exception("already registered")
+        if self._id:
+            self._logger ("Agent.register_one: already registered")
 
-        self._record=await self._interface.add_agents([ ( self._spec, 1 ) ])
+        self._id=await self._interface.add_agents([ ( self._spec, 1 ) ])
 
     async def subscribe_agentaction(self, config : SubscriberConfig, graph : Graph):
         raise NotImplementedError
 
-        #config.parameter=self._record.id
+        #config.parameter=self._id.id
         #s=Subscriber(self._interface, config, graph)
         #return s
 
     async def delete(self):
-        if not self._record:
-            raise Exception('cannot delete: no record')
+        if self._id == None:
+            self._logger.error('Agent.delete called, but no record ')
 
-        await self._interface.delete_agents([self._record.id])
+        await self._interface.delete_agents([self._id.id])
     
 
 class AgentSet():
@@ -275,33 +310,46 @@ class AgentSet():
     def __init__(self, interface : Interface, spec : AgentSpec, count : int):
         self._interface=interface
         self._spec=spec
+        self._logger=forcesim_logging.get_logger('AgentSet')
 
         self._agents=set([
             Agent(interface, spec) for _ in range(0, count)
         ])
         self._count=count
     
-    #def add(self, agents : List[Agent]):
-    #    self._agents.extend(agents)
-
     async def register(self):
         ret=await self._interface.add_agents([ (self._spec, self._count) ])
-        records=ret.data
+        id_list=ret.data[0]
 
-        for (r, agent) in zip(records, self._agents):
-            agent._record=r
+
+        for (id, agent) in zip(id_list, self._agents):
+            agent._id=id
 
     async def delete(self):
         for agent in self._agents:
-            if not agent._record:
-                raise Exception("cannot delete agent: no record")
+            if agent._id is None:
+                self._logger.error(
+                    'AgentSet.delete: an agent was found without ID (spec=%s)', self._spec
+                )
     
-        await self._interface.delete_agents([
-            agent._record for agent in self._agents
-        ])
+        try: 
+            deleted=await self._interface.delete_agents([
+                agent._id for agent in self._agents
+            ])
+        except Interface.InterfaceException as e:
+            for (error_code, data) in e.error.handle_multiple():
+                if error_code == error_code_t.Not_found:
+                        self._logger.error(
+                            'AgentSet.delete: agent ID does not exist in forcesim instance: {'
+                        )
+                else:
+                    raise e
 
+
+        # delete all our agents regardless of the outcome of the request - if there's an
+        # error, we need to clean up anyway
         for agent in self._agents:
-            del agent._record
+            del agent._id
 
 
 

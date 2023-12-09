@@ -10,9 +10,33 @@ from enum import Enum, auto
 
 class error_code_t(Enum):
     Already_started = auto()
+    General_error = auto()
+    Json_parse_error = auto()
+    Json_type_error = auto()
+    Multiple = auto()
+    Not_found = auto()
+    Agent_not_implemented = auto()
+    Agent_config_error = auto()
+    Subscriber_config_error = auto()
 
     def __str__(self):
         return self.name
+
+class response_type_t(Enum):
+    Data = auto()
+    Multiple_stringmap = auto()
+    Multiple_pairlist = auto()
+    Multiple_barelist = auto()
+
+    def __str__(self):
+        return self.name
+
+    def is_multiple(self):
+        return self.value in [
+            self.Multiple_barelist.value, 
+            self.Multiple_pairlist.value, 
+            self.Multiple_stringmap.value, 
+        ]
 
 
 class agentclass_t(Enum):
@@ -48,17 +72,20 @@ class subscriber_type_t(Enum):
 
 
 
-def str_to_agentclass(s : str):
+def str_to_agentclass(s : str) -> agentclass_t:
     return agentclass_t.__getattr__(s)
 
-def str_to_subscriber_type(s : str):
+def str_to_subscriber_type(s : str) -> subscriber_type_t:
     return subscriber_type_t.__getattr__(s)
 
-def str_to_infotype(s : str):
+def str_to_infotype(s : str) -> infotype_t:
     return infotype_t.__getattr__(s)
 
-def str_to_error_code(s : str):
+def str_to_error_code(s : str) -> error_code_t:
     return error_code_t.__getattr__(s)
+
+def str_to_response_type(s : str) -> response_type_t:
+    return response_type_t.__getattr__(s)
 
 
 #@dataclass(kw_only=True)

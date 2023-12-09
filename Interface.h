@@ -11,11 +11,6 @@ using json = nlohmann::json;
 
 class Interface;
 
-
-
-// RetVal is the type of each element in the map that is eventually returned to the client
-
-
 // global error codes that we can use to communicate a specific error condition in 
 // a response without requiring the client to match on the message
 // strings are used instead of numbers to make the errors clear in case a user is
@@ -32,15 +27,95 @@ enum class InterfaceErrorCode {
     Agent_config_error,
 
     Subscriber_config_error,
-};  
+};
 
-std::map<enum InterfaceErrorCode, std::string> interface_error_code_str({
+enum class InterfaceResponseType {
+    Data,
+    Multiple_stringmap,
+    Multiple_pairlist,
+    Multiple_barelist
+};
+
+inline std::map<enum InterfaceErrorCode, std::string> interface_error_code_str({
+    { InterfaceErrorCode::General_error, "General_error" },
+    { InterfaceErrorCode::Json_parse_error, "Json_parse_error" },
+    { InterfaceErrorCode::Json_type_error, "Json_type_error" },
+    { InterfaceErrorCode::Multiple, "Multiple" },
     { InterfaceErrorCode::Already_started, "Already_started" },
+    { InterfaceErrorCode::Not_found, "Not_found" },
+    { InterfaceErrorCode::Agent_not_implemented, "Agent_not_implemented" },
+    { InterfaceErrorCode::Agent_config_error, "Agent_config_error" },
+    { InterfaceErrorCode::Subscriber_config_error, "Subscriber_config_error" },
+});
+
+inline std::map<enum InterfaceResponseType, std::string> interface_response_type_str({
+    { InterfaceResponseType::Data, "Data" },
+    { InterfaceResponseType::Multiple_stringmap, "Multiple_stringmap" },
+    { InterfaceResponseType::Multiple_pairlist, "Multiple_pairlist" },
+    { InterfaceResponseType::Multiple_barelist, "Multiple_barelist" },
 });
 
 inline void to_json(json& j, const enum InterfaceErrorCode x) {
     j = interface_error_code_str[x];
 }
+
+inline void to_json(json& j, const enum InterfaceResponseType x) {
+    j = interface_response_type_str[x];
+}
+
+template<typename RetKey>
+struct detect_multi_response_type {
+    static const inline enum InterfaceResponseType value = InterfaceResponseType::Multiple_pairlist;
+};
+
+template<>
+struct detect_multi_response_type<int> {
+    static const inline enum InterfaceResponseType value = InterfaceResponseType::Multiple_barelist;
+};
+
+template<>
+struct detect_multi_response_type<std::string> {
+    static const inline enum InterfaceResponseType value = InterfaceResponseType::Multiple_stringmap;
+};
+
+
+/********************************************************* 
+ * "list request" processing 
+ * 
+ * 
+ * when an incoming request is a "multi-request", in the sense of providing a list an endpoint
+ * interprets as a list of requests, there is a certain amount of boilerplate involved in the 
+ * application of the endpoint's logic to each element (request) in that list and assembling the
+ * results into a list (or more generally, a map, possibly with integer indices) for the response.
+ * 
+ * endpoint methods (Interface::crow__*) call either list_generator_helper or list_handler_helper,
+ * which both call the main helper function, list_helper:
+ * 
+ *  template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
+ *  static void list_helper(const crow::request& req, crow::response& res, 
+ *       HandlerType handler_f, 
+ *       std::optional<std::function<void(int)>> finally_f = std::nullopt);
+ * 
+ * list_helper does the following:
+ * - parse request JSON
+ * - interpret the JSON as an array of items of type InputItem (see above)
+ * - run the function of type HandlerType on the input, which assembles them in a result
+ *      structure of the appropriate type (depending on RetKey and RetValue)
+ * - optionally run a "finally" function after  all the input is processed
+ * - convert the assembled results to JSON and build the response
+ * 
+ * list_helper uses an "adapter" (list_helper_adapter) to run the HandlerType handler, 
+ *  which takes care of both running handler_f and also assembling the results in the result structure.
+ * For each adapter, there is exactly one HandlerType type: the list_helper_adapter struct 
+ *  template is specialized by HandlerType.
+ *  
+ * 
+ * Currently, HandlerType can be one of:
+ * - list_helper_generator_t (used by list_generator_helper)
+ * - list_helper_handler_t (used by list_handler_helper)
+ * 
+ * TODO further documentation
+  ******************************************************** */
 
 using list_error_t = std::tuple<InterfaceErrorCode, std::string>;
 
@@ -51,6 +126,9 @@ template<typename K, typename V>
 using list_retmap_t = std::map<K, list_ret_t<V>>;
 
 
+template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
+struct list_helper_adapter;
+
 // type of inner request handler which is executed (and returns a value) for each element 
 // in the list provided in the request
 // data structure returned to HTTP client is a 
@@ -60,10 +138,6 @@ using list_retmap_t = std::map<K, list_ret_t<V>>;
 template<typename InputItem, typename RetVal>
 using list_helper_generator_t = 
     std::function<list_ret_t<RetVal>(std::shared_ptr<Interface>, InputItem&)>;
-
-
-template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
-struct list_helper_adapter;
 
 // specialization for list_helper_generator_t
 // TODO switch to allow returning items in their place in the array vs as map keys
@@ -128,13 +202,6 @@ class Interface : public std::enable_shared_from_this<Interface> {
     std::shared_ptr<Market::Market> market;
     crow::SimpleApp crow_app;
 
-    crow::response build_json_crow(
-        std::optional<InterfaceErrorCode> error_code, 
-        std::string msg, 
-        std::optional<json> data = std::nullopt,
-        std::optional<int> http_code = std::nullopt
-    );
-
 
     static void 
     handle_json_wrapper(
@@ -185,6 +252,9 @@ class Interface : public std::enable_shared_from_this<Interface> {
     static void crow__get_price_history(const crow::request&, crow::response&);
 
 
+
+    // final argument: "finally" function to execute after results have been assembled;
+    // the provided argument to the function is number of entries in the result
     template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
     static void list_helper(const crow::request& req, crow::response& res, 
         HandlerType, 
@@ -321,10 +391,20 @@ class Interface : public std::enable_shared_from_this<Interface> {
     static std::shared_ptr<Interface> get_instance(std::shared_ptr<Market::Market>);
 
     json build_json(
-        std::optional<InterfaceErrorCode> error_code,
+        std::optional<enum InterfaceErrorCode> error_code, 
         std::string msg, 
-        std::optional<json> data = std::nullopt
+        std::optional<json> data,
+        std::optional<InterfaceResponseType> data_type
     );
+
+    crow::response build_json_crow(
+        std::optional<enum InterfaceErrorCode> error_code,
+        std::string msg, 
+        std::optional<json> data, 
+        std::optional<InterfaceResponseType> data_type = InterfaceResponseType::Data,
+        std::optional<int> http_code = std::nullopt
+    );
+
     bool start();
 
     constexpr static const float api_version = 0.1000;
