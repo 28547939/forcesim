@@ -4,6 +4,7 @@ import pdb
 
 import itertools
 
+import logging
 import argparse
 
 from datetime import datetime
@@ -25,9 +26,21 @@ import json
 
 import asyncio
 
+import logging
+import forcesim.logging
+
+# needs to be called before any modules (such as util) set up logging at module scope 
+forcesim.logging.add_default_handlers([
+    logging.StreamHandler()
+])
+
+
 from forcesim.api_types import *
 from forcesim.classes import *
 import forcesim.util as util
+
+
+
 
 
 """
@@ -41,6 +54,8 @@ Info structures are sent into the market as specified.
 
 
 async def main():
+
+    log=forcesim.logging.get_logger('basic-py')
 
     prs=argparse.ArgumentParser(
         prog='',
@@ -73,9 +88,11 @@ async def main():
 
 
     # ensure we are configuring the instance starting from an empty/clean state
+    log.info('resetting forcesim instance')
     await interface.reset()
 
     iter_block=config.iter_block_size if config.iter_block_size else 100
+    log.info(f'setting iter_block={iter_block}')
     await interface.configure(iter_block=iter_block)
 
     #if 'info_sequence' not in config:
@@ -98,12 +115,6 @@ async def main():
             raise Exception(f'output_dir {output_dir_path} exists already and is not a directory')
     
 
-
-        #raise Exception(
-        #    f"graph configured on Subscriber {name} but " +
-        #    "output_dir is not set in configuration (or is not a string)"
-        #)
-
     agroup={}
     subscribers={}
 
@@ -121,6 +132,7 @@ async def main():
             )
 
             await agroup[name].register()
+            log.info(f'registered AgentSet (name={name})')
 
             if isinstance(subscriber_name, str):
                 raise NotImplementedError('')
@@ -136,7 +148,7 @@ async def main():
     async def create_subscriber(name):
         sconfig=subscriber_config[name]
         if not sconfig:
-            raise Exception('')
+            raise Exception(f'create_subscriber called for {name} but not set in subscriber_config')
 
         parameter=None
         graph=None
@@ -161,11 +173,10 @@ async def main():
         )
 
         await subscribers[name].start()
+        print(f'started subscriber (name={name})')
 
 
     for name in config.subscribers:
-
-        # TODO what does this iteration do for a dict?
 
         if name in pending_agent_subscribers:
             agent_ids=pending_agent_subscribers[name]
@@ -190,12 +201,13 @@ async def main():
             #    create_subscriber(name)
 
         else:
+            log.info(f'created subscriber (name={name})')
             await create_subscriber(name)
 
     
     try:
         await interface.start()
-    except Interface.InterfaceException as e:
+    except Interface.ErrorResponseException as e:
         if e.error.code == error_code_t.Already_started:
             pass
         else:
@@ -208,10 +220,10 @@ async def main():
             try:
                 info_obj.append(info_spec[info_name])
             except KeyError as e:
-                print(f'info object {info_name} specified in info_sequence was not found - skipping')
+                log.warning(f'info object {info_name} specified in info_sequence was not found - skipping')
 
         await interface.emit_info(info_obj)
-        print(f'about to run {iter_block} iterations')
+        log.info(f'about to run {iter_block} iterations')
         await interface.run(iter_block)
         await interface.wait_for_stop()
 
@@ -222,13 +234,19 @@ async def main():
     #    for (_, s) in subscribers.items():
     #        tg.create_task(s.listener.wait_flushed()) 
 
-    print('waiting for subscribers')
+    log.info('waiting for subscribers')
 
-    # asyncio.gather does not await ?
+
+    # some Subscriber points can arrive after the initial flush - wait for stopped market first
+    await interface.wait_for_stop()
     for (_, s) in subscribers.items():
-        await s.listener.wait_flushed()
+        await s.wait_flushed()
+    
+    record_count=iter_block * len(info_sequence)
+    log.info(f'waiting for {record_count} records')
+    await s.wait_record_count(record_count)
 
-    print('outputting graphs')
+    log.info('outputting graphs')
 
     for (_, s) in subscribers.items():
         s.render_graph()
@@ -242,7 +260,6 @@ async def main():
 """
 2023-10-20 TODO
 subscription option in agent config -> coordinate here
-info config
 """
 
 

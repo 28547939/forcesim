@@ -167,20 +167,24 @@ void Interface::crow__market_wait_for_stop(const crow::request& req, crow::respo
             uintmax_t tmp = jreq["timepoint"];
             tp = timepoint_t(tmp);
         } catch (json::out_of_range& e) {
+            /*
             res = interface->build_json_crow(
                 InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
             );
             res.end();
             return;
+            */
         }
         // it appears that type_error is thrown if the request body is empty (null) - the
         // library interprets this as the 'timepoint' field being null
         catch (json::type_error& e) {
+            /*
             res = interface->build_json_crow(
                 InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
             );
             res.end();
             return;
+            */
         }
 
         std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
@@ -234,7 +238,9 @@ void Interface::crow__market_start(const crow::request& req, crow::response& res
     } catch (std::logic_error& e) {
         res = interface->build_json_crow(
             InterfaceErrorCode::Already_started, 
-            "already started", {}, 200
+            "already started", {}, 
+            std::nullopt,
+            200
         );
     }
 
@@ -263,7 +269,7 @@ Interface::crow__get_price_history(const crow::request& req, crow::response& res
         try {
             erase  = jreq["erase"];
         } catch (json::out_of_range& e) {
-            return interface->build_json_crow(
+            res = interface->build_json_crow(
                 InterfaceErrorCode::General_error, "missing `erase` argument", {}
             );
         }
@@ -323,7 +329,9 @@ std::optional<json> Interface::handle_json(const crow::request& req, crow::respo
     } catch (json::parse_error& e) {
         res = interface->build_json_crow(
             InterfaceErrorCode::Json_parse_error, 
-            string("JSON parse error: ") + e.what(), {}, 400
+            string("JSON parse error: ") + e.what(), {}, 
+            std::nullopt,
+            400
         );
         res.end();
         return std::nullopt;
@@ -360,7 +368,9 @@ Interface::handle_json_array(const crow::request& req, crow::response& res) {
     if (!jreq.is_array()) {
         res = interface->build_json_crow(
             InterfaceErrorCode::Json_type_error, 
-            std::string("request body must be JSON array"),  {}, 400);
+            std::string("request body must be JSON array"),  {}, 
+            std::nullopt,
+            400);
         res.end();
         return std::nullopt;
     }
@@ -398,7 +408,6 @@ void Interface::list_helper(
         return;
     }
 
-        // assuming no exception when jreq.is_array() == true
     std::deque<json> json_deque = json_deque_opt.value();
     std::deque<InputItem> input_vec;
 
@@ -413,7 +422,9 @@ void Interface::list_helper(
         res = interface->build_json_crow(InterfaceErrorCode::Json_type_error, 
             string("encountered error during type conversion: ") + e.what(), 
             most_recent_conversion, 
-        400);
+            std::nullopt, 
+            400
+        );
         res.end();
         return;
     }
@@ -427,11 +438,23 @@ void Interface::list_helper(
         (finally_f.value())(retmap.size());
     }
 
+/*
     int error_count = std::accumulate(retmap.begin(), retmap.end(), false, 
         [](int acc, auto& pair) { 
             return acc + (std::holds_alternative<list_error_t>(pair.second) ? 1 : 0); 
         }
     );
+    */
+
+    std::deque<RetKey> error_keys = std::accumulate(retmap.begin(), retmap.end(), std::deque<RetKey>{}, 
+        [](std::deque<RetKey> acc, auto& pair) { 
+            if (std::holds_alternative<list_error_t>(pair.second)) {
+                acc.push_back(pair.first);
+            }
+            return acc;
+        }
+    );
+    int error_count = error_keys.size();
 
     list_json_ret_t<RetKey> data_ret;
 
@@ -454,17 +477,14 @@ void Interface::list_helper(
             ? std::string("completed with ") + std::to_string(error_count) + std::string(" errors")
             : "completed without errors"
         ,
-        data_ret.dump()
+        json {
+            { "error_keys", json(error_keys) },
+            { "data", data_ret.dump() }
+        },
+        detect_multi_response_type<RetKey>::value
     );
     res.end();
 }
-
-
-// TODO WLOG, possibly use list_generator method which bundles list_helper_generator_t
-// with list_helper to remove the redundancy in the call
-// most likely could eliminate distinction b/w handler adapter and the function helper types
-//  in the list_generator function, pass the adapter inline as a lambda
-// current error is that you're missing an int template argument below
 
 void 
 Interface::crow__add_agents(const crow::request& req, crow::response& res) {
@@ -567,7 +587,8 @@ void Interface::crow__get_agent_history(const crow::request& req, crow::response
             id = jreq["id"].get<int>();
         } catch (json::out_of_range& e) {
             res = interface->build_json_crow(
-                InterfaceErrorCode::General_error, "agent ID not specified", {}, 400
+                InterfaceErrorCode::General_error, "agent ID not specified", {}, 
+                std::nullopt, 400
             );
             res.end();
             return;
@@ -636,6 +657,7 @@ void Interface::crow__emit_info(const crow::request& req, crow::response& res) {
                 InterfaceErrorCode::Json_parse_error, 
                 "encountered errors parsing Info objects",
                 json(err_ret),
+                std::nullopt,
                 400
             );
         } else {
@@ -645,6 +667,7 @@ void Interface::crow__emit_info(const crow::request& req, crow::response& res) {
                 res = interface->build_json_crow(
                     InterfaceErrorCode::General_error,
                     "Market::emit_info encountered error: " + std::get<std::string>(ret),
+                    std::nullopt,
                     std::nullopt,
                     400
                 );
@@ -661,6 +684,8 @@ void Interface::crow__emit_info(const crow::request& req, crow::response& res) {
     });
 }
 
+
+template<class> inline constexpr bool false_helper = false;
 void Interface::crow__add_subscribers(const crow::request& req, crow::response& res) {
 
     Interface::list_generator_helper<subscriber_config_item, Subscriber::id_t>
@@ -676,11 +701,16 @@ void Interface::crow__add_subscribers(const crow::request& req, crow::response& 
             auto entry = ret_deque.at(0);
 
             return std::visit([](auto&& entry) -> list_ret_t<Subscriber::id_t> {
-                using T = decltype(entry);
+                // cppreference.com
+                using T = std::decay_t<decltype(entry)>;
                 if constexpr (std::is_same_v<T, Subscriber::id_t>) 
                     return entry;
                 else if constexpr (std::is_same_v<T, std::string>)
-                    return { InterfaceErrorCode::General_error, entry };
+                    return std::tuple<enum InterfaceErrorCode, std::string> ({
+                        InterfaceErrorCode::General_error, entry 
+                    });
+                else
+                    static_assert(false_helper<T>, "Unexpected type returned from Subscribers::add");
             }, entry);
         
         } catch (json::exception& e) {
@@ -722,7 +752,7 @@ void Interface::crow__del_subscribers(const crow::request& req, crow::response& 
 
                         std::tuple<enum InterfaceErrorCode, std::string> ({
                             InterfaceErrorCode::Not_found,
-                            std::string("provided ID does not exist: ")+ std::to_string(pair.first)
+                            std::string("provided ID does not exist: ")+ pair.first.to_string()
                         })
                     });
                 break;
@@ -877,21 +907,43 @@ bool Interface::start() {
     }
 }
 
-json Interface::build_json(std::optional<enum InterfaceErrorCode> error_code, std::string msg, std::optional<json> data) {
+// TODO json return object with setter methods to incrementally 
+
+json Interface::build_json(
+    std::optional<enum InterfaceErrorCode> error_code, 
+    std::string msg, 
+    std::optional<json> data,
+    std::optional<InterfaceResponseType> data_type
+) {
+
+    // data type defaults to "Data" if data is not nullopt; 
+    auto data_type_final = (
+        data_type.has_value() ? data_type.value()
+        : (
+            data.has_value()
+                ? std::optional<InterfaceResponseType>(InterfaceResponseType::Data) 
+                : std::nullopt
+        )
+    );
+
     return {
-        { "error_code", error_code.value_or(json {}) },
+        { "error_code", error_code.has_value() ? json(error_code.value()) : json {} },
         { "message", msg },
         { "api_version", this->api_version },
-        { "data", (data ? *data : json {})}
+        { "data_type", data_type_final.has_value() ? json(data_type_final.value()) : json {} },
+        { "data", (data ? *data : json {}) }
     };
 };
 
 crow::response Interface::build_json_crow(
     std::optional<enum InterfaceErrorCode> error_code,
-    std::string msg, std::optional<json> data, std::optional<int> http_code 
-    ) {
+    std::string msg, 
+    std::optional<json> data, 
+    std::optional<InterfaceResponseType> data_type,
+    std::optional<int> http_code 
+) {
 
-        json j = this->build_json(error_code, msg, data);
+        json j = this->build_json(error_code, msg, data, data_type);
 
         return crow::response(
             http_code ? *http_code : 200,

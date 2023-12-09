@@ -33,23 +33,27 @@ namespace {
 };
 
 
+struct market_numeric_id_tag {};
+typedef numeric_id<market_numeric_id_tag> agentid_t;
+
 // ID for Agent instances
+/*
 class agentid_t {
     protected:
-        int id;
-        inline static int last_id = 0;
+        unsigned int id;
+        inline static unsigned int last_id = 0;
     public:
     agentid_t() {
         this->id = last_id++;
     }
 
-    int to_numeric() const {
+    unsigned int to_numeric() const {
         return this->id;
     }
 
     agentid_t(const agentid_t &_id) : id(_id.id) {}
 
-    agentid_t(int id) : id(id) {}
+    agentid_t(unsigned int id) : id(id) {}
 
     std::string str() const {
         return std::to_string(id);
@@ -57,6 +61,7 @@ class agentid_t {
 
     auto operator<=> (const agentid_t& x) const = default;
 };
+*/
 
 
 

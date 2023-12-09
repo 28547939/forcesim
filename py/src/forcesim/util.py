@@ -19,8 +19,7 @@ import asyncio
 
 from .api_types import *
 from .classes import *
-
-
+from . import logging as forcesim_logging
 
     
 
@@ -51,6 +50,13 @@ class JsonLoaders(Enum):
 #    JsonLoaders
 #}
 
+
+logger = forcesim_logging.get_logger('util')
+    
+
+
+
+
 def load_json_recursive(path, cls, verbose=False): 
     if path is None:
         if verbose:
@@ -60,9 +66,7 @@ def load_json_recursive(path, cls, verbose=False):
 
     merged=dict()
     for ret in do_load_json_recursive(path, cls):
-        if verbose == True:
-            print(f'load_json_recursive: loading {ret[0]}')
-
+        logger.debug(f'load_json_recursive: loading {ret[0]}')
         merged.update(ret[1])
 
     return merged
@@ -97,11 +101,11 @@ class AgentLoader(JsonLoader):
                 try: 
                     config=(agentconf_ctor[str_to_agentclass(t)])(**x)
                 except TypeError as e:
-                    print(f'Failed to load agent {k}:')
-                    print(e)
-                    print("\nJSON data:")
-                    print(x)
-                    print("\n")
+                    logger.error(f"""Failed to load agent {k}:
+                        {repr(e)}
+                        JSON data:
+                        {x}
+                    """)
 
                     continue
 
@@ -129,11 +133,11 @@ class SubscriberLoader(JsonLoader):
                 try: 
                     yield (k, SubscriberConfig(**x))
                 except TypeError as e:
-                    print(f'Failed to load subscriber {k}:')
-                    print(e)
-                    print("\nJSON data:")
-                    print(x)
-                    print("\n")
+                    logger.error(f"""Failed to load subscriber {k}:
+                        {repr(e)}
+                        JSON data:
+                        {x}
+                    """)
 
 
 

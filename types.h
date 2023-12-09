@@ -22,6 +22,53 @@ inline enum Direction direction_str_ctor(std::string s) {
 
 typedef boost::multiprecision::cpp_dec_float_100 price_t;
 
+// generic auto-incrementing numeric ID type (to be used for Agent IDs, Subscriber IDs)
+// needs to be a template so we track auto-incrementing separately for separate uses of numeric_id
+template<class>
+class numeric_id {
+    protected:
+        unsigned int id;
+        inline static unsigned int last_id = 0;
+    public:
+    numeric_id() {
+        this->id = last_id++;
+    }
+
+    unsigned int to_numeric() const {
+        return this->id;
+    }
+
+    numeric_id(const numeric_id &_id) : id(_id.id) {}
+    numeric_id(unsigned int id) : id(id) {}
+
+    std::string str() const {
+        return std::to_string(id);
+    }
+    std::string to_string() const {
+        return this->str();
+    }
+
+    auto operator<=> (const numeric_id& x) const = default;
+    bool operator== (const numeric_id& x) const = default;
+    auto operator=(const numeric_id& x) { id = x.id; }
+
+    auto operator-- (int) = delete;
+    auto operator++ (int) = delete;
+    auto operator++ () = delete;
+    auto operator+= (const numeric_id& x) = delete;
+    auto operator+ (const numeric_id& x) = delete;
+
+    struct Key {
+        size_t operator()(const numeric_id& id) const {
+            return std::hash<unsigned int>{}(id.to_numeric());
+        }
+
+    };
+};
+// trivial structs used as template arguments to numeric_id
+struct market_numeric_id_tag {};
+struct subscriber_numeric_id_tag {};
+
 
 class timepoint_t {
     protected:

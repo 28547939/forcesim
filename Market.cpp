@@ -512,7 +512,7 @@ void Market::reset() {
 
     for (auto list_entry : Ss::list()) {
         auto id = list_entry.id;
-        VLOG(5) << "Market::reset: waiting for subscriber " << std::to_string(id);
+        VLOG(5) << "Market::reset: waiting for subscriber " << id.to_string();
         Ss::del(id, true);
     }
 
