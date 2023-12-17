@@ -221,6 +221,7 @@ class Subscriber():
             self._graph.add_points(points)
 
         for (count, evs) in self._record_count_wait.items():
+            print(f'{count} {len(self._points)}')
             if len(self._points) >= count:
                 for ev in evs:
                     ev.set()
@@ -256,14 +257,16 @@ class Subscriber():
         self._flushed_wait.clear()
 
     async def wait_record_count(self, count : int):
+        if len(self._points) >= count:
+            return
+
         ev=asyncio.Event()
         if count in self._record_count_wait:
             self._record_count_wait[count].append(ev)
         else:
             self._record_count_wait[count]=[ ev ]
 
-        if not ev.is_set():
-            await ev.wait()
+        await ev.wait()
         self._record_count_wait[count].remove(ev)
 
 

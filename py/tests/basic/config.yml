@@ -1,5 +1,5 @@
 
-output_dir: '/home/market-force-sim/forcesim/py/test/basic/output'
+output_dir: '/home/market-force-sim/forcesim/py/tests/basic/output'
 
 iter_block_size: 100
 
