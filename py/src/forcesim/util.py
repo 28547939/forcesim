@@ -52,7 +52,7 @@ class JsonLoaders(Enum):
 
 
 logger = forcesim_logging.get_logger('util')
-    
+
 
 
 
@@ -77,6 +77,10 @@ def do_load_json_recursive(path, cls):
 
     for dirpath, _,  files in os.walk(path):
         for filename in files:
+            if not (filename.endswith('.json') or filename.endswith('.JSON')):
+                logger.debug(f"file {filename} skipped (filename isn't .json)")
+                continue
+
             path=os.path.join(dirpath, filename)
             ret=cls.load(path)
             if ret is not None:
