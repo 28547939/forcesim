@@ -513,7 +513,7 @@ class Base_subscriber : public AbstractSubscriber {
         timepoint_t tp = this->cursor;
         // TODO check in range
 
-        if (tp >= m_now) {
+        if (tp > m_now) {
             std::ostringstream e;
             e << "update: subscriber cursor is ahead of timepoint_t argument:"
                 << " cursor=" << std::to_string(tp.to_numeric()) 
