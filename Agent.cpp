@@ -163,16 +163,23 @@ r_0     y-value of lower segment (around current price)
 
 */
 
-std::pair<std::deque<double>, std::deque<double>>
+
+std::tuple<std::deque<double>, std::deque<double>,
+    std::optional<std::tuple<
+        std::deque<std::string>,    // segment labels
+        std::deque<std::string>,          // y labels
+        std::deque<double>          // segment values
+    >>
+>
 ModeledCohortAgent_v2::compute_distribution_points(
-        price_t price, std::optional<float> override_subjectivity_extent) 
-    {
+        price_t price, std::optional<float> override_subjectivity_extent, bool trace
+    ) {
 
     float s = override_subjectivity_extent.value_or(this->current_subjectivity_extent);
 
     // the piecewise distribution is not applicable at s=0
     if (s == 0) {
-        return { {}, {} };
+        return { {}, {}, std::nullopt };
     }
 
     auto e_0 = this->config.e_0;
@@ -193,35 +200,78 @@ ModeledCohortAgent_v2::compute_distribution_points(
 
     // y values for the points on our distribution - some may need to be eliminated depending
     // on whether there are duplicate x values
+    /*
     std::deque<double> ys = {
         0,
         r_0*(1-s), 
-        r_0*(1-s),
+        r_0*(1-s),      // price view
         r_2*(1-s),
         1,
-        1, 
+        1,              // current price
         1, 
         0
     };
+    */
 
-    std::vector<double> segments = {
+    std::deque<double> ys = {
+        0,
+        s,
+        s,              // current price
+
+        // i.e. r_2-midpoint b/w the adjacent y points
+        std::fmin(r_0*(1-s), s) + std::fabs(r_0*(1-s) - s) * r_2,
+        // subjectivity does not factor into it w.r.t y - did not think of a consistent way to do that
+
+        r_0*(1-s),
+        r_0*(1-s),      // price view
+        r_0*(1-s),      
+        0
+    };
+
+    std::deque<double> segments = {
         e_0*s*d,
-        i_0*s*d,                    // v sum of these two is always (d - i_1*s*d)
-        (d - i_1*s*d)*(r_1*s),      // always nonzero
-        (d - i_1*s*d)*(1-r_1*s),    // always nonzero
+        i_0*s*d,
+
+        // sum of these two is always (d - i_1*s*d)
+        (d - i_1*s*d)*(1-r_1*s),   
+        (d - i_1*s*d)*(r_1*s),      
+
         i_1*s*d,
         i_2*s*d,
         e_1*s*d
     };
+
+
+    std::deque<std::string> segment_labels = {
+        "e_0*s*d",
+        "i_0*s*d",
+        "(d - i_1*s*d)*(r_1*s)",
+        "(d - i_1*s*d)*(1-r_1*s)",
+        "i_1*s*d",
+        "i_2*s*d",
+        "e_1*s*d"
+    };
+
+    std::deque<std::string> y_labels = {
+        "0",
+        "s",
+        "s",
+        "min(r_0*(1-s), s)+|r_0*(1-s)-s)|*r_2",
+        "r_0*(1-s)",
+        "r_0*(1-s)", 
+        "r_0*(1-s)", 
+        "0"
+    };
+
 
     // begin assembling the points of the distribution, with possible duplicates (in the case of
     // segments of zero length), to be resolved later
     std::map<double, std::deque<double>> pts_multi;
 
     // initialize with the first point 
-    if (this->price_view < price) {
+    if (this->price_view > price) {
         pts_multi.insert(pts_multi.end(), {
-            v - segments[1] - segments[0],
+            c - segments[1] - segments[0],
             { ys[0] }
         });
     } else {
@@ -229,7 +279,7 @@ ModeledCohortAgent_v2::compute_distribution_points(
         std::reverse(ys.begin(), ys.end());
 
         pts_multi.insert(pts_multi.end(), {
-            c - segments[1] - segments[0],
+            v - segments[1] - segments[0],
             { *( ys.end() - 1 ) }
         });
     }
@@ -238,6 +288,9 @@ ModeledCohortAgent_v2::compute_distribution_points(
     auto prev = pts_multi.begin();
     auto next_y = std::next(ys.begin());
     for (auto s = segments.begin(); s != segments.end(); ++s, ++next_y) {
+        // current segment value, to be either added or subtracted depending on which
+        // direction we are building the graph; possibly 0, in which case the pts_multi
+        // value will have more than one element
         auto increment = (*s * (this->price_view > price ? 1 : -1));
         auto new_x = (*prev).first + increment;
 
@@ -284,7 +337,8 @@ ModeledCohortAgent_v2::compute_distribution_points(
         // duplicate y values - we need to choose the immutable one
         else {
             for (auto j : immutable) {
-                // if the immutable index lies within the current range of points,
+                // if the immutable index lies within the current range of x points
+                // (in terms of insertion order in the non-consolidated list of points), 
                 // it takes priority
                 //
                 // (if everything is working correctly, the y value at j is present in 
@@ -300,7 +354,13 @@ ModeledCohortAgent_v2::compute_distribution_points(
             // away from the edge). for now this is the same as the highest y value, but this could
             // change if we redesign the distribution.
             if (!y_final.has_value()) {
-                y_final = *(std::max_element(y_multi.begin(), y_multi.end()));
+                y_final = *( std::max_element(y_multi.begin(), y_multi.end()) );
+
+                /* in case we need to return info about which index was kept - not currently needed
+                auto y_final_it = std::max_element(y_multi.begin(), y_multi.end());
+                y_final = *y_final_it;
+                size_t relative_index = std::distance(y_final_it, y_multi.begin());
+                */
             }
         }
 
@@ -311,7 +371,19 @@ ModeledCohortAgent_v2::compute_distribution_points(
         i += y_multi.size();
     }
 
-    return { xs_final, ys_final };
+    std::optional<std::tuple<
+        std::deque<std::string>,    // segment labels
+        std::deque<std::string>,          // y labels
+        std::deque<double>          // segment values
+    >> trace_output;
+
+    if (trace == true) {
+        trace_output.emplace(
+            segment_labels, y_labels, segments
+        );
+    }
+
+    return { xs_final, ys_final, trace_output };
 }
 
 
@@ -328,7 +400,7 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
     double attraction_point;
 
     if (this->current_subjectivity_extent > 0) {
-        auto [xs, ys] = this->compute_distribution_points(current_price);
+        auto [xs, ys, trace] = this->compute_distribution_points(current_price);
 
         // construct piece-wise linear distribution to combine "price inertia" with the 
         // subjective price view
@@ -336,6 +408,7 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
         attraction_point = dist(this->engine);
     } 
 
+    // this 
     else {
         attraction_point = this->price_view.convert_to<double>();
     }

@@ -1,7 +1,42 @@
 {
-	"test1": {
+	"s=1": {
 		"type": "Subjective",
 		"subjectivity_extent": 1,
+		"price_indication": 100,
+		"is_relative": false
+	},
+
+	"s=0.99": {
+		"type": "Subjective",
+		"subjectivity_extent": 0.99,
+		"price_indication": 100,
+		"is_relative": false
+	},
+
+	"s=0.9": {
+		"type": "Subjective",
+		"subjectivity_extent": 0.9,
+		"price_indication": 100,
+		"is_relative": false
+	},
+
+	"s=0.5": {
+		"type": "Subjective",
+		"subjectivity_extent": 0.5,
+		"price_indication": 100,
+		"is_relative": false
+	},
+
+	"s=0.1": {
+		"type": "Subjective",
+		"subjectivity_extent": 0.1,
+		"price_indication": 100,
+		"is_relative": false
+	},
+
+	"s=0": {
+		"type": "Subjective",
+		"subjectivity_extent": 0.0,
 		"price_indication": 100,
 		"is_relative": false
 	}
