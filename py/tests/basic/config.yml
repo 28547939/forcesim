@@ -4,10 +4,11 @@ output_dir: '/home/market-force-sim/forcesim/py/tests/basic/output'
 iter_block_size: 100
 
 agents:
-    '2023-11-19_0': 100
-    '2023-11-19_1': 50
-    '2023-11-19_2': 20
-    '2023-11-19_3': 10
+    '2023-11-19_0': 200
+    '2023-11-19_1': 100
+    '2023-11-19_2': 40
+    '2023-11-19_3': 20
+    '2023-11-19_4': 10
     #'2023-11-15': 20
     #agent1: 2
     #agent2: 2
@@ -27,7 +28,7 @@ subscribers:
 # elements of info_sequence can be empty if desired
 
 info_sequence:
-    - [ 'test1' ]
+    - [ 's=0.75' ]
     - []
     - []
     - []

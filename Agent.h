@@ -216,7 +216,7 @@ template<>
 struct AgentConfig<AgentType::ModeledCohort_v1> : AgentConfigBase {
     AgentConfig(json config) : 
         AgentConfigBase(config),
-        initial_variance(config["initial_variance"]),
+//        initial_variance(config["initial_variance"]), 
         variance_multiplier(config["variance_multiplier"]),
         force_threshold(config["force_threshold"])
     {
@@ -230,7 +230,7 @@ struct AgentConfig<AgentType::ModeledCohort_v1> : AgentConfigBase {
 
     }
 
-    double initial_variance;
+    double initial_variance = 0;
     double variance_multiplier;
     double force_threshold;
     price_t default_price_view;
@@ -252,6 +252,8 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
 
     // for testing/debugging
     price_t get_price_view() { return this->price_view; }
+    void set_price_view(price_t p) { this->price_view = p; }
+
 
     std::mt19937 engine;
     std::normal_distribution<double> dist;
@@ -311,8 +313,14 @@ class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
     virtual void info_update_view(std::shared_ptr<Info::Info<Info::Types::Subjective>>&);
 
 
-    std::pair<std::deque<double>, std::deque<double>>
-    compute_distribution_points(price_t, std::optional<float> = std::nullopt);
+    std::tuple<std::deque<double>, std::deque<double>,
+        std::optional<std::tuple<
+            std::deque<std::string>,    // segment labels
+            std::deque<std::string>,          // y labels
+            std::deque<double>          // segment values
+        >>
+    >
+    compute_distribution_points(price_t, std::optional<float> = std::nullopt, bool = false);
 };
 
 
