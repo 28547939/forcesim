@@ -97,8 +97,6 @@ Representation of a subscriber in this program
 SubscriberRecord represents a subscriber that has been registered with the simulator
 """
 class Subscriber():
-
-
     class Listener():
 
         _socket : Any

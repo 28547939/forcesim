@@ -48,7 +48,6 @@ ModeledCohortAgent_v2 agent_from_file(std::string path, std::string agent_key) {
     json agent_config_json = agent_config_list_json[agent_key];
 
     AgentConfig<AgentType::ModeledCohort_v2> agent_config(agent_config_json);
-
     return ModeledCohortAgent_v2(agent_config);
 }
 
@@ -79,11 +78,23 @@ int main(int argc, char* argv[]) {
 
         po::notify(vm);
 
-        ModeledCohortAgent_v2 agent = agent_from_file(path, key);
+        auto agent = agent_from_file(path, key);
+
+        auto agent_config = agent.Agent_base<AgentType::ModeledCohort_v2>::config();
 
         agent.set_price_view(
             price_t(vm["price-view"].as<double>())
         );
+
+        std::map<std::string, double> parameters = {
+            { "e_0", agent_config.e_0 },
+            { "i_0", agent_config.i_0 },
+            { "r_0", agent_config.r_0 },
+            { "r_1", agent_config.r_1 },
+            { "r_2", agent_config.r_2 },
+            { "i_1", agent_config.i_1 },
+            { "i_2", agent_config.i_2 }
+        };
 
         auto points = agent.compute_distribution_points(
             price_t(vm["current-price"].as<double>()),
@@ -94,7 +105,8 @@ int main(int argc, char* argv[]) {
         json outjson({
             std::get<0>(points),
             std::get<1>(points),
-            std::get<2>(points).value()
+            std::get<2>(points).value(),
+            parameters
         });
 
         std::ostringstream outstr;

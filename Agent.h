@@ -143,7 +143,7 @@ class Agent_base : public Agent {
     AgentConfig<T> _config;
 
     public:
-    AgentConfig<T> config() { return this->_config; }
+    virtual AgentConfig<T> config() { return this->_config; }
 
     Agent_base(AgentConfig<T> c) : _config(c), Agent(c) {
     }
@@ -263,7 +263,7 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
 
 
 template<>
-struct AgentConfig<AgentType::ModeledCohort_v2> : AgentConfig<AgentType::ModeledCohort_v1> {
+struct AgentConfig<AgentType::ModeledCohort_v2> : public AgentConfig<AgentType::ModeledCohort_v1> {
     AgentConfig(json config) 
     :   AgentConfig<AgentType::ModeledCohort_v1>(config)
     {
@@ -299,9 +299,10 @@ struct AgentConfig<AgentType::ModeledCohort_v2> : AgentConfig<AgentType::Modeled
     double e_1;
 
 };
-class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
+class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1, 
+    public Agent_base<AgentType::ModeledCohort_v2> {
     protected:
-    AgentConfig<AgentType::ModeledCohort_v2> config;
+    //AgentConfig<AgentType::ModeledCohort_v2> config;
     
     float current_subjectivity_extent;
 
@@ -309,6 +310,8 @@ class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1 {
     ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2>);
     ~ModeledCohortAgent_v2() {}
     virtual AgentAction do_evaluate(price_t p);
+
+    //using Agent_base<AgentType::ModeledCohort_v2>::_config;
 
     virtual void info_update_view(std::shared_ptr<Info::Info<Info::Types::Subjective>>&);
 
