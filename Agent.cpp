@@ -153,8 +153,7 @@ AgentAction ModeledCohortAgent_v1::do_evaluate(price_t current_price) {
 }
 
 ModeledCohortAgent_v2::ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2> c) 
-    :   ModeledCohortAgent_v1(c),
-        config(c)
+    :   ModeledCohortAgent_v1(c), Agent_base<AgentType::ModeledCohort_v2>(c)
 {}
 
 /*
@@ -182,36 +181,22 @@ ModeledCohortAgent_v2::compute_distribution_points(
         return { {}, {}, std::nullopt };
     }
 
-    auto e_0 = this->config.e_0;
-    auto i_0 = this->config.i_0;
-    auto r_0 = this->config.r_0;
-    auto r_1 = this->config.r_1;
-    auto r_2 = this->config.r_2;
-    auto i_1 = this->config.i_1;
-    auto i_2 = this->config.i_2;
-    auto e_1 = this->config.e_1;
+    auto config = this->Agent_base<AgentType::ModeledCohort_v2>::config();
+
+    auto e_0 = config.e_0;
+    auto i_0 = config.i_0;
+    auto r_0 = config.r_0;
+    auto r_1 = config.r_1;
+    auto r_2 = config.r_2;
+    auto i_1 = config.i_1;
+    auto i_2 = config.i_2;
+    auto e_1 = config.e_1;
     auto v = this->price_view.convert_to<double>();
     auto c = price.convert_to<double>();
 
     // the 'width'/'breadth' of the distribution is scaled depending on the difference 
     // between our view and the current price 
     auto d = std::fabs(v - c);
-
-
-    // y values for the points on our distribution - some may need to be eliminated depending
-    // on whether there are duplicate x values
-    /*
-    std::deque<double> ys = {
-        0,
-        r_0*(1-s), 
-        r_0*(1-s),      // price view
-        r_2*(1-s),
-        1,
-        1,              // current price
-        1, 
-        0
-    };
-    */
 
     std::deque<double> ys = {
         0,
@@ -396,6 +381,7 @@ void ModeledCohortAgent_v2::info_update_view(std::shared_ptr<Info::Info<Info::Ty
 AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
 
     this->info_handler();
+    auto config = this->Agent_base<AgentType::ModeledCohort_v2>::_config;
 
     double attraction_point;
 
@@ -408,7 +394,7 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
         attraction_point = dist(this->engine);
     } 
 
-    // this 
+    // 
     else {
         attraction_point = this->price_view.convert_to<double>();
     }
@@ -417,7 +403,7 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
     auto diff = (current_price - attraction_point).convert_to<long double>();
 
     long double internal_force = 
-        std::min(1.0L, std::fabs(diff) / this->_config.force_threshold) * MAX_INTERNAL_FORCE;
+        std::min(1.0L, std::fabs(diff) / config.force_threshold) * MAX_INTERNAL_FORCE;
     
 
     VLOG(9) << "ModeledCohortAgent_v2 debug:"
