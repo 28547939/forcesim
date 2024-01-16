@@ -22,22 +22,16 @@ client program), graph and describe the graph of the piecewise-linear distributi
 
 
 """
-
 TODO
-adjust height
-grid lines on both axes
 guide lines on y axis
 annotation at current price, price view
-
 """
 
 
 def render_from_points(xs, ys, meta, output_file):
     (segment_labels, ylabels, segment_values)=meta
 
-    #fig=plt.figure(layout="constrained")
-    fig=plt.figure()
-    fig, (graph_ax, table_ax)=plt.subplots(2, 1)
+    fig, (table_ax, graph_ax)=plt.subplots(2, 1)
     table_ax.axis('off')
     table_ax.axis('tight')
     #fig.set_constrained_layout(True)
@@ -82,16 +76,17 @@ def render_from_points(xs, ys, meta, output_file):
         colLabels=[ 
             'coordinates', 
             'next segment (${\Delta}x$) definition', 
-            'next segment (${\Delta}x$) (value)' 
+            'next segment value' 
         ],
+        colWidths=[ 0.3, 0.4, 0.3 ],
+        edges='horizontal',
         fontsize=14
     )
 
     tbl.auto_set_font_size(False)
     for ((row, col), cell) in tbl.get_celld().items():
         if (col == 1 or col == 2):
-            pass
-            #cell.set_text_props(usetex=True)
+            cell.set_text_props(usetex=True)
 
     #graph_plt=fig.add_subplot()
     
@@ -137,11 +132,12 @@ def render_from_points(xs, ys, meta, output_file):
     # constrained layout doesn't work
     plt.tight_layout()
 
-
+    graph_ax.set_ylabel('Density')
+    graph_ax.set_xlabel('Price')
+    fig.subplots_adjust(left=0.1, bottom=0.1, right=0.9 )
 
     print(segment_labels, segment_values)
 
-    plt.ylabel('Density')
     plt.savefig(output_file)
 
 
