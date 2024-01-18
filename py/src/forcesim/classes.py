@@ -39,10 +39,22 @@ Classes to represent various entities in the simulator
 
 class Graph():
 
+    class actual_defaultdict(dict):
+        def __init__(self, defaults : dict):
+            self._defaults=defaults
+        def __missing__(self, key):
+            return self._defaults.get(key)
+
     # TODO support for animated, real-time graph
     def __init__(self, output_path=None, is_animated=False) -> None:
         self._output_path=output_path
         self._is_animated=is_animated
+
+        self._settings=Graph.actual_defaultdict(dict(
+            linewidth=0.25,
+            dpi=600,
+            title='Untitled'
+        ))
         self.reset()
 
     def add_points(self, points : List[tuple[int,int]]):
@@ -60,7 +72,15 @@ class Graph():
         self._axis_tp = []
         self._axis_price = []
 
-    def to_file(self, path=None):
+    def settings(self, **kwargs):
+        if len(kwargs) == 0:
+            return self._settings
+        else:
+            for (k, v) in kwargs.items():
+                self._settings[k]=v 
+
+
+    def image_to_file(self, path=None):
         
         if path is None:
             if self._output_path is None:
@@ -69,8 +89,17 @@ class Graph():
             path=self._output_path
             
         fig, ax = plt.subplots()
-        ax.plot(self._axis_tp, self._axis_price, linewidth=0.1)
-        plt.savefig(path, dpi=900)
+
+        # TODO plot as points not line
+        ax.plot(self._axis_tp, self._axis_price, 
+            linewidth=self._settings['linewidth']
+        )
+        ax.set_title(self._settings['title'])
+        ax.set_ylabel('Price')
+        ax.set_xlabel('Timepoint')
+        ax.locator_params(nbins=20)
+        plt.grid(visible=True, linestyle='--', color='gray', linewidth=0.1)
+        plt.savefig(path, dpi=self._settings['dpi'])
 
         self.reset()
 
@@ -97,6 +126,15 @@ Representation of a subscriber in this program
 SubscriberRecord represents a subscriber that has been registered with the simulator
 """
 class Subscriber():
+
+    @staticmethod
+    def load_points_file(path):
+        with open(path, 'rb') as f:
+            pts=json.load(f)
+            assert(isinstance(pts, List))
+
+            return pts
+
     class Listener():
 
         _socket : Any
@@ -212,14 +250,18 @@ class Subscriber():
         del(self.record)
         self.remove_graph()
 
+    def points_to_file(self, path):
+        with open(path, 'w') as f:
+            json.dump(self._points, f)
+
+        
+
     def add_points(self, points):
         #self._logger.debug(f'points: {points}')
         self._points.extend(points)
-        if self._graph:
-            self._graph.add_points(points)
 
         for (count, evs) in self._record_count_wait.items():
-            print(f'{count} {len(self._points)}')
+            #print(f'{count} {len(self._points)}')
             if len(self._points) >= count:
                 for ev in evs:
                     ev.set()
@@ -236,12 +278,16 @@ class Subscriber():
         del(self._graph)
 
     def render_graph(self, path=None):
-        #self.listener.render_graph()
-        self._graph.to_file(path)
+
+        if self.has_graph():
+            self._graph.add_points(self._points)
+            self._graph.image_to_file(path)
+        else:
+            raise Exception('render_graph: no graph') 
     
     def has_graph(self):
         try:
-            if isinstance(self.listener._graph, Graph):
+            if isinstance(self._graph, Graph):
                 return True
             else:
                 raise TypeError('has_graph: subscriber listener has a non-Graph _graph attribute')

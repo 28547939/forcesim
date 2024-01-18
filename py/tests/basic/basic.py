@@ -157,6 +157,7 @@ async def main():
             graph=Graph(output_path=os.path.join(
                 output_dir_path, name+'.png'
             ))
+            # TODO json output path
 
         if (sconfig.type == subscriber_type_t.AGENT_ACTION 
             and sconfig.parameter is None):
@@ -250,6 +251,9 @@ async def main():
 
     for (_, s) in subscribers.items():
         s.render_graph()
+        s.points_to_file(os.path.join(
+            output_dir_path, name+'.json'
+        ))
 
 
 
