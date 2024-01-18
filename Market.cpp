@@ -350,14 +350,16 @@ info_view can be nullopt, but info_history should never be uninitialized
             //release api_mtx
             L_api.unlock();
 
-            /* 
-                Locks internal Subscriber mutex for access to the subscriber map
-            */
-            const auto p3s = std::chrono::steady_clock::now();
-            uintmax_t period = Subscriber::Subscribers::update(this->shared_from_this(), this->timept);
-            const auto p3f = std::chrono::steady_clock::now();
+            // only run this if there have been iterations - otherwise ts objects will 
+            // have no further records to process
+            if (r > 0) {
+                const auto p3s = std::chrono::steady_clock::now();
+                // Locks internal Subscriber mutex for access to the subscriber map
+                uintmax_t period = Subscriber::Subscribers::update(this->shared_from_this(), this->timept);
+                const auto p3f = std::chrono::steady_clock::now();
 
-            this->perf_measurement("subscriber_update", p3s, p3f);
+                this->perf_measurement("subscriber_update", p3s, p3f);
+            }
 
             if (L_op.try_lock()) {
                 VLOG(9) << "op_execute_helper() after iteration";
