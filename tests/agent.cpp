@@ -32,7 +32,7 @@ void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
     auto pts = a->compute_distribution_points(p);
 
     std::ostringstream s;
-    for (auto x = pts.first.begin(), y = pts.second.begin(); x != pts.first.end(); ++x, ++y) {
+    for (auto x = std::get<0>(pts).begin(), y = std::get<1>(pts).begin(); x != std::get<0>(pts).end(); ++x, ++y) {
         s << "(" + std::to_string(*x) +", "+ std::to_string(*y) +")\n";
     }
 
@@ -41,6 +41,7 @@ void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
 
 
 // create a 'dummy' AgentRecord object to allow us to call Market::do_evaluate
+// no longer used - we have Market::test_agentaction
 /*
 AgentRecord get_agentrecord(std::unique_ptr<Agent> a) {
 
@@ -138,6 +139,9 @@ int main(int argc, char* argv[]) {
 				{ "force_threshold", force_threshold },
                 { "distribution_parameters", json::array({
                     0, 0.1, 0.1, 1, 0.1, 0.5, 0.01, 0
+                    /*
+                    e_0 i_0 r_0 r_1 r_2 i_1 i_2 e_1
+                    */
                 })}
             })
         );

@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <memory>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include "Info.h"
 #include "types.h"
@@ -26,12 +27,40 @@ struct AgentAction {
 };
 
 enum class AgentType { 
+    // unimplemented
     Determinstic,
+    // first version/attempt for investigation
     ModeledCohort_v1,
+    // second attempt for investigation
     ModeledCohort_v2,
+    // testing: takes the same exact action every time (as configured)
     Trivial,
+    // testing: takes action according to a normal distribution with
     BasicNormalDist
 };
+
+static std::map<std::string, enum AgentType> str_agenttype = {
+    { "TrivialAgent", AgentType::Trivial },
+    { "BasicNormalDistAgent", AgentType::BasicNormalDist },
+    { "ModeledCohortAgent_v1", AgentType::ModeledCohort_v1 },
+    { "ModeledCohortAgent_v2", AgentType::ModeledCohort_v2 }
+};
+
+// for now, just generate it anew every time - not a performance-sensitive operation
+inline std::string agenttype_str(enum AgentType t) {
+    std::map<enum AgentType, std::string> x;
+
+    std::transform(str_agenttype.begin(), str_agenttype.end(), 
+    std::inserter(x, x.end()),
+        [](auto& p) -> std::pair<enum AgentType, std::string> {
+            return { p.second, p.first };
+        }
+    );
+
+    return x.find(t)->second;
+}
+
+
 
 struct AgentConfigBase {
     // in (0, 1]
@@ -57,11 +86,12 @@ struct AgentConfig : AgentConfigBase {
 };
 
 
+// abstract base class
 class Agent {
     private:
 
-
     // temporary object passed to the Agent at every Agent::evaluate invocation
+    // info_view is nullopt  iff  Market::info_history is empty
     std::optional<info_view_t> info_view;
 
     // timepoint of the most recently read info entry
@@ -74,7 +104,6 @@ class Agent {
     std::optional<Info::infoset_t>
     read_next_infoset() {
 
-        // std::nullopt info_view  iff  Market::info_history is empty
         if (this->info_view.has_value()) {
             auto& info_view_ptr = this->info_view.value();
 
@@ -89,10 +118,14 @@ class Agent {
                 } else {
 
                     // keep the info cursor updated consistently with the info_view
+                    // Market has provided us with an info_view whose cursor is set
+                    //      to what we left it at previously (i.e. at the previously
+                    //      read element)
                     (*this->_info_cursor)++;
                     (*info_view_ptr)++;
                 }
 
+                // read() does not increment the internal pointer (cursor) of the view
                 return info_view_ptr->read();
             } 
             
@@ -111,11 +144,11 @@ class Agent {
 
     public:
     virtual ~Agent() {}
-    const static enum AgentType t;
+    //const static enum AgentType t;
     const AgentConfigBase config;
 
-    const std::optional<timepoint_t>& info_cursor() { return this->_info_cursor; }
-
+    const std::optional<timepoint_t>& 
+    info_cursor() { return this->_info_cursor; }
 
     std::pair<std::optional<AgentAction>, std::optional<info_view_t>>
     evaluate(price_t p, std::optional<info_view_t> info_view) {
@@ -131,27 +164,31 @@ class Agent {
         }
     }
 
-    /*
-    */
+    // implemented by specific Agent classes
     virtual AgentAction do_evaluate(price_t p) = 0;
 };
 
 
+// agent mixin to handle T-type config
 template<enum AgentType T>
-class Agent_base : public Agent {
+class Agent_base : public virtual Agent {
     protected:
     AgentConfig<T> _config;
 
     public:
-    virtual AgentConfig<T> config() { return this->_config; }
+    virtual AgentConfig<T> config() final { return this->_config; }
 
-    Agent_base(AgentConfig<T> c) : _config(c), Agent(c) {
-    }
-    const static enum AgentType t = T;
+    Agent_base(AgentConfig<T> c) : _config(c), Agent(c) {}
+    ~Agent_base() = default;
 };
 
 
 
+template<enum AgentType>
+class Agent_impl;
+
+// JSON object access exceptions should be caught by the client
+// generally this is in Interface.cpp
 
 
 template<>
@@ -159,25 +196,25 @@ struct AgentConfig<AgentType::BasicNormalDist> : AgentConfigBase {
     AgentConfig(json config) : 
         AgentConfigBase(config),
         mean(config["mean"]),
-        stddev(config["stddev"]) {
-
-// TODO check exception for json key access
-    }
+        stddev(config["stddev"]) 
+    {}
 
     double stddev;
     double mean;
 };
-class BasicNormalDistAgent : public Agent_base<AgentType::BasicNormalDist> {
+template<>
+class Agent_impl<AgentType::BasicNormalDist> : public Agent_base<AgentType::BasicNormalDist> {
     protected:
 
     public:
-    BasicNormalDistAgent(AgentConfig<AgentType::BasicNormalDist>);
-    ~BasicNormalDistAgent() {}
+    Agent_impl(AgentConfig<AgentType::BasicNormalDist>);
+    ~Agent_impl() {}
     AgentAction do_evaluate(price_t p);
 
     std::mt19937 engine;
     std::normal_distribution<float> dist;
 };
+using BasicNormalDistAgent = Agent_impl<AgentType::BasicNormalDist>;
 
 
 
@@ -186,37 +223,32 @@ struct AgentConfig<AgentType::Trivial> : AgentConfigBase {
     AgentConfig(json config) : 
         AgentConfigBase(config),
         direction(direction_str_ctor(config["direction"])), 
-        internal_force(config["internal_force"]) {
+        internal_force(config["internal_force"]) 
+    {}
 
-// TODO check exception for json key access
-    }
     enum Direction direction;
     float internal_force;
 };
-class TrivialAgent : public Agent_base<AgentType::Trivial> {
+template<>
+class Agent_impl<AgentType::Trivial> : public Agent_base<AgentType::Trivial> {
     protected:
 
     public:
-    TrivialAgent(AgentConfig<AgentType::Trivial>);
-    ~TrivialAgent() {}
+    Agent_impl(AgentConfig<AgentType::Trivial>);
+    ~Agent_impl() {}
     AgentAction do_evaluate(price_t p);
 };
+using TrivialAgent = Agent_impl<AgentType::Trivial>;
 
-
-
-// TODO refactor 
-/*
-class ModeledCohortAgent_base : public Agent_base<AgentType::ModeledCohort> {
-
-};
-*/
 
 
 template<>
 struct AgentConfig<AgentType::ModeledCohort_v1> : AgentConfigBase {
     AgentConfig(json config) : 
         AgentConfigBase(config),
-//        initial_variance(config["initial_variance"]), 
+
+        // no longer used
+//        initial_variance(config["initial_variance"]),  
         variance_multiplier(config["variance_multiplier"]),
         force_threshold(config["force_threshold"])
     {
@@ -235,14 +267,15 @@ struct AgentConfig<AgentType::ModeledCohort_v1> : AgentConfigBase {
     double force_threshold;
     price_t default_price_view;
 };
-class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
+template<>
+class Agent_impl<AgentType::ModeledCohort_v1> : public Agent_base<AgentType::ModeledCohort_v1> {
     protected:
 
     price_t price_view;
 
     public:
-    ModeledCohortAgent_v1(AgentConfig<AgentType::ModeledCohort_v1>);
-    ~ModeledCohortAgent_v1() {}
+    Agent_impl(AgentConfig<AgentType::ModeledCohort_v1>);
+    ~Agent_impl() {}
     virtual AgentAction do_evaluate(price_t p);
 
 
@@ -257,9 +290,8 @@ class ModeledCohortAgent_v1 : public Agent_base<AgentType::ModeledCohort_v1> {
 
     std::mt19937 engine;
     std::normal_distribution<double> dist;
-
-
 };
+using ModeledCohortAgent_v1 = Agent_impl<AgentType::ModeledCohort_v1>;
 
 
 template<>
@@ -267,7 +299,6 @@ struct AgentConfig<AgentType::ModeledCohort_v2> : public AgentConfig<AgentType::
     AgentConfig(json config) 
     :   AgentConfig<AgentType::ModeledCohort_v1>(config)
     {
-        // TODO validate - all parameters must be in [0,1]
         auto parameters = config["distribution_parameters"].get<std::deque<double>>();
         this->e_0 = parameters[0];
         this->i_0 = parameters[1];
@@ -297,25 +328,23 @@ struct AgentConfig<AgentType::ModeledCohort_v2> : public AgentConfig<AgentType::
     double i_1;
     double i_2;
     double e_1;
-
 };
-class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1, 
+template<>
+class Agent_impl<AgentType::ModeledCohort_v2> : public ModeledCohortAgent_v1, 
     public Agent_base<AgentType::ModeledCohort_v2> {
     protected:
-    //AgentConfig<AgentType::ModeledCohort_v2> config;
     
     float current_subjectivity_extent;
 
     public:
-    ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2>);
-    ~ModeledCohortAgent_v2() {}
+    Agent_impl(AgentConfig<AgentType::ModeledCohort_v2>);
+    ~Agent_impl() {}
     virtual AgentAction do_evaluate(price_t p);
-
-    //using Agent_base<AgentType::ModeledCohort_v2>::_config;
 
     virtual void info_update_view(std::shared_ptr<Info::Info<Info::Types::Subjective>>&);
 
 
+    // optionally return "trace" info
     std::tuple<std::deque<double>, std::deque<double>,
         std::optional<std::tuple<
             std::deque<std::string>,    // segment labels
@@ -323,8 +352,9 @@ class ModeledCohortAgent_v2 : public ModeledCohortAgent_v1,
             std::deque<double>          // segment values
         >>
     >
-    compute_distribution_points(price_t, std::optional<float> = std::nullopt, bool = false);
+    compute_distribution_points(price_t, std::optional<float> = std::nullopt, bool return_trace = false);
 };
+using ModeledCohortAgent_v2 = Agent_impl<AgentType::ModeledCohort_v2>;
 
 
 

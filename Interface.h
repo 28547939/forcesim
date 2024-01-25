@@ -6,6 +6,8 @@
 #include <functional>
 #include <optional>
 
+#include <boost/asio.hpp>
+
 
 using json = nlohmann::json;
 
@@ -88,8 +90,8 @@ struct detect_multi_response_type<std::string> {
  * application of the endpoint's logic to each element (request) in that list and assembling the
  * results into a list (or more generally, a map, possibly with integer indices) for the response.
  * 
- * endpoint methods (Interface::crow__*) call either list_generator_helper or list_handler_helper,
- * which both call the main helper function, list_helper:
+ * endpoint methods (Interface::crow__*) which support this call either list_generator_helper or 
+ * list_handler_helper, which both call the main helper function, list_helper:
  * 
  *  template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
  *  static void list_helper(const crow::request& req, crow::response& res, 
@@ -98,10 +100,10 @@ struct detect_multi_response_type<std::string> {
  * 
  * list_helper does the following:
  * - parse request JSON
- * - interpret the JSON as an array of items of type InputItem (see above)
+ * - interpret the JSON as an array of items of type InputItem (see function signature above)
  * - run the function of type HandlerType on the input, which assembles them in a result
  *      structure of the appropriate type (depending on RetKey and RetValue)
- * - optionally run a "finally" function after  all the input is processed
+ * - optionally run a "finally" function after all the input is processed
  * - convert the assembled results to JSON and build the response
  * 
  * list_helper uses an "adapter" (list_helper_adapter) to run the HandlerType handler, 
@@ -114,7 +116,12 @@ struct detect_multi_response_type<std::string> {
  * - list_helper_generator_t (used by list_generator_helper)
  * - list_helper_handler_t (used by list_handler_helper)
  * 
- * TODO further documentation
+ * list_generator_helper runs a function for each item in the input list, with the response list
+ *  just being the list of return values from each invocation.
+ * list_handler_helper runs the function once on the entire list, and populates the response list
+ *  in whatever way it needs to.
+ * 
+ * TODO possibly rename HandlerType to HelperType for more consistent terminiology
   ******************************************************** */
 
 using list_error_t = std::tuple<InterfaceErrorCode, std::string>;
@@ -191,11 +198,6 @@ struct list_helper_adapter<
     }
 };
 
-
-
-// 2023-04-07 change
-// list ret needs to be a map instead of list
-
 // singleton
 class Interface : public std::enable_shared_from_this<Interface> {
     protected:
@@ -228,30 +230,6 @@ class Interface : public std::enable_shared_from_this<Interface> {
     inline static std::shared_ptr<Interface> instance;
 
 
-    /*
-        It's easier for the handlers to be static, because passing them as handlers (ie inline) to 
-        the CROW_ROUTE macro when they are non-static function pointers / methods does
-        not appear to be possible with std::bind.
-        Passing them as plain function pointers without std::bind and without a bound `this`
-        works as expected. 
-        Interface works well as a "singleton" class, so this design is not inconvenient.
-
-        These must not be called until the Interface singleton is instantiated, since they
-        access the instance pointer (Interface::instance)
-    */
-
-    static void crow__market_run(const crow::request& req, crow::response&);
-    static void crow__market_stop(const crow::request&, crow::response&);
-    static void crow__market_wait_for_stop(const crow::request&, crow::response&);
-
-    static void crow__market_configure(const crow::request&, crow::response&);
-    static void crow__market_start(const crow::request& req, crow::response& resp);
-
-    static void crow__market_reset(const crow::request& req, crow::response& resp);
-
-    static void crow__get_price_history(const crow::request&, crow::response&);
-
-
 
     // final argument: "finally" function to execute after results have been assembled;
     // the provided argument to the function is number of entries in the result
@@ -278,6 +256,33 @@ class Interface : public std::enable_shared_from_this<Interface> {
         Interface::list_helper<InputItem, RetKey, RetVal, list_helper_handler_t<InputItem, RetKey, RetVal>>
             (req, res, f, finally_f);
     }
+
+
+    /*
+        It's easier for the handlers to be static, because passing them as handlers (ie inline) to 
+        the CROW_ROUTE macro when they are non-static function pointers / methods does
+        not appear to be possible with std::bind.
+        Passing them as plain function pointers without std::bind and without a bound `this`
+        works as expected. 
+        Interface works well as a "singleton" class, so this design is not inconvenient.
+
+        These functions must not be called until the Interface singleton is instantiated, since they
+        access the instance pointer (Interface::instance)
+    */
+
+    // TODO usage documentation for each method
+
+    static void crow__market_run(const crow::request& req, crow::response&);
+    static void crow__market_stop(const crow::request&, crow::response&);
+    static void crow__market_wait_for_stop(const crow::request&, crow::response&);
+
+    static void crow__market_configure(const crow::request&, crow::response&);
+    static void crow__market_start(const crow::request& req, crow::response& resp);
+
+    static void crow__market_reset(const crow::request& req, crow::response& resp);
+
+    static void crow__get_price_history(const crow::request&, crow::response&);
+
 
 
     /*
@@ -405,7 +410,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
         std::optional<int> http_code = std::nullopt
     );
 
-    bool start();
+    bool start(std::optional<boost::asio::ip::address>, int);
 
     constexpr static const float api_version = 0.1000;
 };

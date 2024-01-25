@@ -223,7 +223,9 @@ async def main():
             except KeyError as e:
                 log.warning(f'info object {info_name} specified in info_sequence was not found - skipping')
 
-        await interface.emit_info(info_obj)
+        if len(info_obj) > 0:
+            await interface.emit_info(info_obj)
+
         log.info(f'about to run {iter_block} iterations')
         await interface.run(iter_block)
         await interface.wait_for_stop()

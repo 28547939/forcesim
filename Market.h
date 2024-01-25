@@ -33,36 +33,7 @@ namespace {
 };
 
 
-struct market_numeric_id_tag {};
 typedef numeric_id<market_numeric_id_tag> agentid_t;
-
-// ID for Agent instances
-/*
-class agentid_t {
-    protected:
-        unsigned int id;
-        inline static unsigned int last_id = 0;
-    public:
-    agentid_t() {
-        this->id = last_id++;
-    }
-
-    unsigned int to_numeric() const {
-        return this->id;
-    }
-
-    agentid_t(const agentid_t &_id) : id(_id.id) {}
-
-    agentid_t(unsigned int id) : id(id) {}
-
-    std::string str() const {
-        return std::to_string(id);
-    }
-
-    auto operator<=> (const agentid_t& x) const = default;
-};
-*/
-
 
 
 
@@ -98,7 +69,7 @@ class AgentRecord {
 
     std::set<Flags> flags;
 };
-// used when reporting information about agents
+// used when reporting information about agents (Market::list_agents)
 struct agentrecord_desc_t {
     const agentid_t id;
     const timepoint_t created;
@@ -109,6 +80,7 @@ struct agentrecord_desc_t {
 
 // part of a mechanism to send asynchronous commands to a market instance (without a 
 // separate thread), see `op` classes below
+struct op_abstract;
 enum class op_t {
     ADD_AGENT,
     DEL_AGENT,
@@ -118,7 +90,6 @@ enum class op_t {
 
 
 class Market;
-struct op_abstract;
 
 
 enum class state_t {
@@ -158,7 +129,7 @@ class Market : public std::enable_shared_from_this<Market> {
         std::queue<std::shared_ptr<op_abstract>> op_queue;
         std::mutex op_queue_mtx;
         std::condition_variable op_queue_cv;
-        void op_execute_helper();
+        bool op_execute_helper();
 
         /*  protects our internal data from simultaneous access 
             by multiple client threads
@@ -167,10 +138,12 @@ class Market : public std::enable_shared_from_this<Market> {
 
         // "current time" - the point in time where the next iteration
         // will take place (i.e. 1 step in time after the most recent iteration)
-        // initialized to 0 - when we have not iterated at all
+        // initialized to 0 - when we have not iterated at all; the zeroth
+        // iteration is the first iteration
         timepoint_t timept;
 
         // the most recent price (price generated from most recent iteration)
+        // so current_price is the price associated with this->timept-1
         price_t current_price;
         std::unique_ptr<ts<price_t>> price_history;
 
@@ -186,23 +159,23 @@ class Market : public std::enable_shared_from_this<Market> {
         perf_map_t perf_map;
 
         enum state_t state;
+        // how many more iterations remain until the Market stops automatically; nullopt means 
+        // run indefinitely (until manually stopped)
         std::optional<std::atomic<unsigned int>> remaining_iter;
 
+        // invoke an Agent's computation 
         // can be overridden to provide an alternate "evaluation model"
         virtual std::tuple<std::optional<AgentAction>, price_t, std::optional<info_view_t>> 
             do_evaluate(AgentRecord&, price_t, price_t, std::optional<info_view_t>);
 
         // iter_block is the number of time steps which take place "contiguously" (in an "iteration
-        // block"), with no other activity
-        // between iteration blocks, the Market does things like updating Subscribers, etc,
-        // and it releases the API mutex which allows for client programs (such as Interface)
-        // to make modifications via the public Market methods
+        // block"), with no other activity.
+        // between iteration blocks, the Market does things like updating Subscribers, 
+        // allowing API calls (for client programs such as the Interface singleton), and processing 
+        // `op` objects.
         std::atomic<unsigned int> iter_block;
 
-        // managing startup
-        // the client program needs to call the `launch` method first, to start the Market's 
-        // thread. afterwards, to actually begin the simulation, `start` must be called.
-        // both methods can be called only once 
+        // see below, above the `launch` method
         std::atomic<bool> launched;
         std::atomic<bool> started;
         std::binary_semaphore start_sem;
@@ -238,8 +211,19 @@ class Market : public std::enable_shared_from_this<Market> {
         }
         ~Market() {}
 
+        // TODO not yet used - to be used to react to SIGINT/SIGTERM etc
         static inline std::atomic<bool> shutdown_signal;
 
+
+        // managing startup
+        // the client program needs to call the `launch` method first, to start the Market's 
+        // thread. 
+        // afterwards, to actually begin the simulation, `start` must be called.
+        // both methods can be called only once
+        // 
+        // overall, the intention is to make it possible to start the Market's thread first and have
+        // it wait for the initialization of relevant state by the calling thread before entering 
+        // the main loop
         std::thread launch(bool auto_start = false) {
 
             if (this->launched == true) 
@@ -326,13 +310,17 @@ class Market : public std::enable_shared_from_this<Market> {
         // If run is called again, `count` more iterations are performed, instead of however
         // many had been remaining at that time.
 
-        // Iteration does not begin until Market::start is called; it only needs to be called
-        //  once
+        // Initially, iteration does not begin until Market::start is called; it only needs 
+        // to be called once.
         void run(std::optional<int> count = std::nullopt);
 
         
         // when the current iteration block completes, this will remove pending iterations 
-        // and stop iterating (unless a RUN 'op' is queued)
+        // and stop iterating. A 'RUN' `op` restarts iteration. If a 'RUN' op is already present 
+        // in the queue, it will most likely be processed immediately after this stop invocation, 
+        // even though the RUN op was queued before the stop invocation.
+        // 
+        // Generally it is recommended to run/stop the Market instance asynchronously using `op` objects.
         void stop();
 
         // destroy all `ts` structures, set time to 0, set price to INITIAL_PRICE,
@@ -340,9 +328,8 @@ class Market : public std::enable_shared_from_this<Market> {
         void reset();
 
 
-
         // wait for the Market to enter the state_t::STOPPED state
-        // this will happen when either
+        // this will happen either
         // - after the specified number of iterations (via Market::run) has completed
         // - when a 'STOP' op_t is queued and processed between iteration blocks
         //
@@ -418,6 +405,10 @@ class Market : public std::enable_shared_from_this<Market> {
 
             Returns either the current timepoint_t (where the infoset was inserted) or,
             in the case of failure, a string explaining the failure
+
+            Since the Market API is only available between iteration blocks, Info objects
+            can only be emitted with a certain granularity in time, i.e. only between
+            iteration blocks.
         */
         std::variant<timepoint_t, std::string> 
         emit_info(Info::infoset_t& x);
@@ -435,34 +426,35 @@ class Market : public std::enable_shared_from_this<Market> {
 // The "op" describes and encapsulates the operation to be performed on the 
 // Market object; the Market object is unaware of the "op" internals, and just
 // calls execute on the op_abstract pointer.
-// It technically does block on insertion of the op into the op_queue, but the idea is
-// that this is less time consuming than the actual op itself, so it's asynchronous
-// in that sense.
 //
+// Queuing the op/inserting the op onto the op_queue blocks, but the actual execution of the 
+// op's operation is asynchronous (from the standpoint of the client)
+// 
 // Since the Crow webserver is multithreaded, blocking on the Market API is OK, 
 // so this "op" interface will probably mostly not be needed.
 // The one instance where it must be used is when the Market is not in the RUN state;
 // in that case, the Market is waiting on the op queue for an op that starts it.
+// It's also best to use the STOP op instead of calling Market::stop directly.
+//
+// op objects can return values asynchronously to the client; the client maintains a
+// shared_ptr of the op, and a condition variable is used to notify when the return value
+// is available. 
 //
 // Aside from that, it could be used in the future as a way to independently organize
 // together functionality that needs to operate on a Market object, and which
 // is more complex than just a single call to one of the Market methods.
 
-/* 
-    From the standpoint of the Market class
-*/
+
+// Market is only aware of the abstract interface
 struct op_abstract {
     virtual void execute(Market &) = 0;
 };
 
+// return values
 template<enum op_t>
 struct op_ret {};
 
 
-/*
-    From the standpoint of the client of the Market class: op_base and
-    its derived classes
-*/
 template<enum op_t T>
 class op_base : public op_abstract {
     private:
@@ -501,7 +493,6 @@ template<enum op_t> struct op {};
 
 // This is the only op class that is strictly necessary - it needs to be used to 
 // set a Market into the RUN state once it's in the STOPPED state.
-
 template<>
 struct op_ret<op_t::RUN> {};
 template<>
@@ -515,6 +506,20 @@ class op<op_t::RUN> : public op_base<op_t::RUN> {
     op(std::optional<int> count = std::nullopt) : count(count) {}
     std::optional<int> count;
 };
+
+// this op class is also recommeneded - it ensures that competing calls to RUN
+// and STOP are processed in the order that they are invoked (i.e. queued)
+template<>
+struct op_ret<op_t::STOP> {};
+template<>
+class op<op_t::STOP> : public op_base<op_t::STOP> {
+    private:
+    op_ret<op_t::STOP> do_execute(Market &m) {
+        m.stop();
+        return {};
+    }
+};
+
 
 
 
@@ -535,17 +540,6 @@ class op<op_t::ADD_AGENT> : public op_base<op_t::ADD_AGENT> {
     std::unique_ptr<Agent> agent;
 };
 
-
-template<>
-struct op_ret<op_t::STOP> {};
-template<>
-class op<op_t::STOP> : public op_base<op_t::STOP> {
-    private:
-    op_ret<op_t::STOP> do_execute(Market &m) {
-        m.stop();
-        return {};
-    }
-};
 
 }
 

@@ -49,14 +49,10 @@
         The "cursor" is only defined when there are elements in the ts.
 */
 
+// extra space is used to mark which points in series are missing, or alternatively,
+// which ones are present. this allows for more efficient construction of the sparse_view,
+// which 
 enum class mark_mode_t { MARK_PRESENT, MARK_MISSING };
-
-/*
-2023-10-11 TODO
-add 'restrict' option to  ts::view (default on) to throw out of range 
-see about unifying view and sparse_view under base class, including shared functionality
-possibly combine them into just one class
-*/
 
 template<typename T>
 class ts {
@@ -72,12 +68,6 @@ class ts {
         : _first_tp(tp), mark_mode(m) {}
 
     ts(const ts& copy) = default;
-        /*
-        this->_first_tp = copy._first_tp;
-        this->seq = copy.seq;
-        this->mark_mode = copy.mark_mode;
-        this->_marked
-        */
 
     typedef T value_type;
 
@@ -284,6 +274,7 @@ class ts {
 
         Unlike the view, construction takes time linear in the number of elements _marked present,
         and space is occupied by the map.
+        But no data is copied from the source ts - only iterators.
 
         sparse_view also supports a few operations in addition to what view offers:
         TODO
@@ -319,6 +310,8 @@ class ts {
 
             auto begin = src.seq.begin();
 
+            // the sparse_view copies iterators from the source ts, not actual data
+            // so this relies on the continued validity of the ts's underlying deque iterators
             auto do_insert = [this, &src](uintmax_t index) {
                 this->map.insert(this->map.end(), {
                     src._first_tp + index,
@@ -327,13 +320,16 @@ class ts {
             };
 
 
+            // process only those elements which are marked
             if (src.mark_mode == mark_mode_t::MARK_PRESENT) {
                 for (auto& index : src._marked) {
                     if (index >= offset) {
                         do_insert(index);
                     }
                 }
-            } else if (src.mark_mode == mark_mode_t::MARK_MISSING) {
+            } 
+            // process only those elements which are not marked
+            else if (src.mark_mode == mark_mode_t::MARK_MISSING) {
                 auto _marked_it = src._marked.begin();
                 // find the first _marked (missing) element that lies beyond our initial offset
                 while (_marked_it != src._marked.end() && *_marked_it < offset) {
@@ -343,6 +339,8 @@ class ts {
                 // starting at the initial offset in the underlying ts, add all the elements
                 // that are not _marked (missing). when a _marked element is encountered, skip
                 // it and begin checking against the next _marked element.
+                // so we traverse src.seq and _marked in tandem, with our position in
+                //  src.seq never exceeding the value of the next element in _marked
                 for (int i = offset; i < src.seq.size(); i++) {
                     if (_marked_it != src._marked.end() && i == *_marked_it) {
                         _marked_it++;
@@ -420,9 +418,8 @@ class ts {
     };
 
     /*  The view class     
-
-
-        TODO The start point, if given, needs to exist in the ts already (i.e. can't be in the future)
+        TODO documentation
+        cursor represents next unread element
 
     */
     class view {
