@@ -11,7 +11,6 @@ void to_json(json& j, const timepoint_t tp) {
     j = json(tp.to_numeric());
 }
 
-/* TODO move this into a separate file to that it's also accessible to Subscriber.h */
 namespace Market {
 
     void to_json(json& j, const agentid_t id) {
@@ -27,6 +26,8 @@ namespace Market {
             c.iter_block = j.at("iter_block").get<uintmax_t>();
         }
 
+
+    // Market::Config conversions - currently we're not using Config
         /*
         auto agent_history_prune_age = j.value("agent_history_prune_age", std::nullopt);
         auto price_history_prune_age = j.value("price_history_prune_age", std::nullopt);
@@ -83,6 +84,22 @@ void to_json(json& j, const AgentAction act) {
     j["internal_force"] = json(act.internal_force);
 }
 
+/*
+currently not relying on this for incoming Agent configuration - better to check 
+manually to give a more informative error message in the case of a non-implemented
+agent than "JSON error"
+void from_json(const json& j, enum AgentType& t) {
+    std::string s = j.get<std::string>();
+    using enum AgentType;
+
+    auto it = agenttype_str.find(s);
+    if (it == agenttype_str.end()) {
+        throw std::invalid_argument(std::string("unknown AgentType: ") + s);
+    } else {
+        t = it->second;
+    }
+}
+*/
 
 void from_json(const json& j, agent_config_item& c) {
     j.at("type").get_to(c.type);
@@ -97,22 +114,13 @@ void from_json(const json& j, subscriber_config_item& c) {
 
 namespace Info {
 
-    /*
-    void from_json(const json& j, Info<Types::Subjective>& i) {
-        j.at("subjectivity_extent").get_to(i.subjectivity_extent);
-        j.at("price_indication").get_to(i.price_indication);
-        j.at("relative").get_to(i.relative);
-
-        if (!i.is_valid()) {
-            throw std::out_of_range("Types::Subjective::is_valid returned false");
-        }
-    }
-    */
 
 
-
-    /* expects the JSON object to have 'type' and 'data' keys (see Interface.h)
-    */
+    // expects the JSON object to have 'type' and 'data' keys (see Interface.h)
+    //
+    // convert the Info object to the property subtype based on the type indicated
+    // in the input JSON, then cast it to a shared_ptr<Abstract>
+    // see Info.h for methods to down-cast the Abstract pointer 
     void from_json(const json& j, std::shared_ptr<Abstract>& info_json) {
 
         auto t_str = j.at("type").get<std::string>();

@@ -14,6 +14,12 @@
 
 #include <boost/asio.hpp>
 
+// simple client program to set up multiple threads - Interface, Market, and Subscriber manager
+// thread, which is the basic overall setup of the main program (i.e. forcesim.cpp), to ensure
+// that it runs and to experiment with or test as needed.
+// more thorough tests of the Interface are done with Python, since the Interface is accessed
+// over HTTP.
+
 /*
     Verbosity levels
 
@@ -22,7 +28,6 @@
 */
 
 
-// TODO cppreference.com
 /*
 */
 /*
@@ -91,10 +96,6 @@ int main (int argc, char* argv[]) {
     });
 
     if (std::signal(SIGINT, signal_handler) == SIG_ERR) {
-        printf("SIG_ERR\n");
-    }
-
-    if (std::signal(SIGFPE, signal_handler) == SIG_ERR) {
         printf("SIG_ERR\n");
     }
 
@@ -170,7 +171,7 @@ int main (int argc, char* argv[]) {
     auto t3 = std::thread([m]() {
         auto i = Interface::get_instance(m);
 
-        i->start();
+        i->start(std::nullopt, 18080);
     });
 
 

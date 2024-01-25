@@ -6,28 +6,15 @@
 
 #include "Agent.h"
 
-
-
 #include <random>
 
-/*
-#include <boost/math/distributions/uniform.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/lognormal.hpp>
-
-#include <boost/random.hpp>
-#include <boost/random/random_device.hpp>
-*/
 #include <glog/logging.h>
 
-TrivialAgent::TrivialAgent(AgentConfig<AgentType::Trivial> c) 
-    : Agent_base<AgentType::Trivial>(c) {
+Agent_impl<AgentType::Trivial>::Agent_impl(AgentConfig<AgentType::Trivial> c) 
+    : Agent_base<AgentType::Trivial>(c), Agent(c) {
 }
 
 
-/*
-    "Trivial" agent takes the same action every time
-*/
 AgentAction TrivialAgent::do_evaluate(price_t p) {
     return {
         this->_config.direction,
@@ -36,13 +23,12 @@ AgentAction TrivialAgent::do_evaluate(price_t p) {
 }
 
 
-BasicNormalDistAgent::BasicNormalDistAgent(AgentConfig<AgentType::BasicNormalDist> c) 
-    : Agent_base<AgentType::BasicNormalDist>(c),
+Agent_impl<AgentType::BasicNormalDist>::Agent_impl(AgentConfig<AgentType::BasicNormalDist> c) 
+    : Agent_base<AgentType::BasicNormalDist>(c), Agent(c), 
         dist(c.mean, c.stddev) {
 
         std::random_device dev;
         this->engine.seed(dev());
-
 }
 
 
@@ -67,8 +53,8 @@ AgentAction BasicNormalDistAgent::do_evaluate(price_t p) {
 }
 
 
-ModeledCohortAgent_v1::ModeledCohortAgent_v1(AgentConfig<AgentType::ModeledCohort_v1> c) 
-    : Agent_base<AgentType::ModeledCohort_v1>(c),
+Agent_impl<AgentType::ModeledCohort_v1>::Agent_impl(AgentConfig<AgentType::ModeledCohort_v1> c) 
+    : Agent_base<AgentType::ModeledCohort_v1>(c), Agent(c),
         dist(0, c.initial_variance) 
 {
 
@@ -76,8 +62,6 @@ ModeledCohortAgent_v1::ModeledCohortAgent_v1(AgentConfig<AgentType::ModeledCohor
         this->engine.seed(dev());
 
         this->price_view = c.default_price_view;
-
-
 }
 
 double normalsample_to_factor(double sample) {
@@ -152,15 +136,9 @@ AgentAction ModeledCohortAgent_v1::do_evaluate(price_t current_price) {
 
 }
 
-ModeledCohortAgent_v2::ModeledCohortAgent_v2(AgentConfig<AgentType::ModeledCohort_v2> c) 
-    :   ModeledCohortAgent_v1(c), Agent_base<AgentType::ModeledCohort_v2>(c)
+Agent_impl<AgentType::ModeledCohort_v2>::Agent_impl(AgentConfig<AgentType::ModeledCohort_v2> c) 
+    :   ModeledCohortAgent_v1(c), Agent_base<AgentType::ModeledCohort_v2>(c), Agent(c)
 {}
-
-/*
-
-r_0     y-value of lower segment (around current price)
-
-*/
 
 
 std::tuple<std::deque<double>, std::deque<double>,
@@ -181,6 +159,8 @@ ModeledCohortAgent_v2::compute_distribution_points(
         return { {}, {}, std::nullopt };
     }
 
+    // we have two Agent_base bases - one we inherit from directly, one inherited by 
+    // our based ModledCohort_v1
     auto config = this->Agent_base<AgentType::ModeledCohort_v2>::config();
 
     auto e_0 = config.e_0;
@@ -203,7 +183,7 @@ ModeledCohortAgent_v2::compute_distribution_points(
         s,
         s,              // current price
 
-        // i.e. r_2-midpoint b/w the adjacent y points
+        // i.e. the "r_2 midpoint" b/w the adjacent y points
         std::fmin(r_0*(1-s), s) + std::fabs(r_0*(1-s) - s) * r_2,
         // subjectivity does not factor into it w.r.t y - did not think of a consistent way to do that
 
@@ -352,7 +332,7 @@ ModeledCohortAgent_v2::compute_distribution_points(
         ys_final.push_back(y_final.value());
 
         // next index in the original, non-consolidated list of points depends on how many 
-        // y values we have just processed
+        // non-consolidated y values we have just processed
         i += y_multi.size();
     }
 

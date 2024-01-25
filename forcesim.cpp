@@ -43,8 +43,8 @@ int main (int argc, char* argv[]) {
     po::options_description desc("Options");
     desc.add_options()
         ("help", "...")
-        ("interface-address", po::value<std::string>()->required(), "")
-        ("interface-port", po::value<int>()->required(), "")
+        ("interface-address", po::value<std::string>()->default_value("127.0.0.1"), "")
+        ("interface-port", po::value<int>()->default_value(18080), "")
         ("iter-block", po::value<int>()->default_value(1000), "")
         ("subscriber-poll-interval", po::value<int>()->default_value(5000), "")
         ("subscriber-max-records", po::value<int>()->default_value(1000), "")
@@ -72,7 +72,7 @@ int main (int argc, char* argv[]) {
     auto t0 = m->launch();
 
     m->configure({
-        vm["iter-block"].as<int>();
+        vm["iter-block"].as<int>()
     });
 
     Subscriber::Subscribers::manager_thread_poll_interval.store(
@@ -85,11 +85,16 @@ int main (int argc, char* argv[]) {
         );
     });
 
+    boost::asio::ip::address listen_addr = boost::asio::ip::address::from_string(
+        vm["interface-address"].as<std::string>()
+    );
 
-    auto t2 = std::thread([m]() {
+    int listen_port = vm["interface-port"].as<int>();
+
+    auto t2 = std::thread([m, listen_addr, listen_port]() {
         auto i = Interface::get_instance(m);
 
-        i->start();
+        i->start(listen_addr, listen_port);
     });
 
 

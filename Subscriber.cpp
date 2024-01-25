@@ -87,6 +87,12 @@ void from_json(const json& j, EndpointConfig& c) {
     j.at("remote_port").get_to(c.remote_port);
 }
 
+void to_json(json& j, const EndpointConfig c) {
+    j = json();
+    j["remote_addr"] = c.remote_addr.to_string();
+    j["remote_port"] = json(c.remote_port);
+}
+
 
 void from_json(const json& j, FactoryParameter<AgentAction>& x) {
     j.at("id").get_to(x.id);
@@ -115,9 +121,6 @@ void to_json(json& j, const Subscribers::list_entry_t x) {
 
 template<> std::map<FactoryParameter<AgentAction>, std::set<id_t>> Factory<AgentAction>::idmap = {};
 template<> std::map<FactoryParameter<price_t>, std::set<id_t>> Factory<price_t>::idmap = {};
-
-//std::atomic<int> 
-//Subscribers::manager_thread_poll_interval;
 
 std::unordered_map<EndpointConfig, std::shared_ptr<Endpoint>, EndpointConfig::Key> 
 Endpoints::endpoints;
@@ -241,6 +244,7 @@ Subscribers::del(id_t id, bool sync) {
         (it->second)->wait_flag(subscriber_flag_t::Flushed);
     }
 
+    // the subscriber's pending_records_count is an atomic type
     if ((it->second)->pending_records_count > 0) {
         (it->second)->flags({{ subscriber_flag_t::Dying }});
         return Ss::delete_status_t::MARKED;
@@ -251,7 +255,6 @@ Subscribers::del(id_t id, bool sync) {
 }
 
 
-// TODO mutex lock - error is because it's already locked by the thread
 std::deque<std::pair<id_t, Subscribers::delete_status_t>>
 Subscribers::del(std::deque<id_t> ids, bool sync) {
     std::lock_guard L { Subscribers::it_mtx };
@@ -285,14 +288,6 @@ Subscribers::list() {
     return r;
 }
 
-/*
-deleting a subscriber
-
-need set<flag> on subscriber
-if Dying flag / Flushed flag, manager thread should ignore minimum record config - send all records
-then delete the subscriber after emitting
-*/
-
 void Subscribers::launch_manager_thread(int max_record_split) {
     VLOG(5) << "Subscribers::launch_manager_thread";
 
@@ -303,10 +298,7 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
         auto& idmap = Subscribers::idmap;
 
-        /*  Subscriber manager_thread shutdown does not free resources owned by the Subscribers
-            class or by individual Subscribers
-        */
-       /*
+       /* TODO not yet implemented
         if (Subscribers::shutdown_signal == true) {
             VLOG(4) << "Subscribers manager_thread shutting down";
             return;
@@ -364,13 +356,27 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
 
 AbstractSubscriber::AbstractSubscriber(Config& c)
-//    : config(c), id(AbstractSubscriber::next_id++) 
     : config(c), id(id_t {}) 
 {
 }
 
 AbstractSubscriber::~AbstractSubscriber() {
-    // TODO check endpoint refcounts; if =1 then delete
+    auto config = this->endpoint->config;
+
+    // if our copy of the endpoint is the only one remaining (aside from the container), 
+    // delete it from the main container
+    if (this->endpoint.use_count() == 2) {
+        auto it = Endpoints::endpoints.find(config);
+        if (it == Endpoints::endpoints.end()) {
+            LOG(ERROR)  << "endpoint was prematurely removed from Endpoints::endpoints"
+                        << "config=" << json(config).dump()
+            ;
+
+            return;
+        }
+
+        Endpoints::endpoints.erase(it);
+    }
 }
 
 void AbstractSubscriber::reset(const timepoint_t& t) {
@@ -395,40 +401,5 @@ ts<AgentAction>::view get_iterator_helper(
 {
     return m->agent_action_iterator(tp, p.id);
 }
-
-
-
-
-/*
-template<typename T, typename Param>
-FactoryBase<T, Param>::~FactoryBase() {
-        // only call delete_id if `associate` has been called; otherwise, 
-        // calling delete_id with an empty optional results in all IDs
-        // being deleted
-        if (this->id.has_value()) {
-            delete_id(this->id);
-        }
-}
-*/
-
-
-
-
-/*
-template<typename T, typename R>
-Base_subscriber<T,R>::Base_subscriber(Config& c, std::unique_ptr<Factory<T>> f) 
-    
-{
-
-}
-
-~Base_subscriber<T>::Base_subscriber() {
-
-}
-
-std::pair<uintmax_t, std::optional<std::string>>
-Base_subscriber<T>::update(const Market::timepoint_t& now) {
-}
-*/
 
 };

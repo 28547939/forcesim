@@ -66,15 +66,13 @@ void from_json(const json& j, subscriber_config_item& c);
 
 namespace Info {
     void from_json(const json& j, std::shared_ptr<Abstract>& t);
-    /*
-    void from_json(const json& j, Info<Types::Subjective>& i);
-    void from_json(const json& j, Types& t);
-    */
 };
 
 namespace nlohmann {
 
    // for now, treat the high-precision price_t as a double for JSON purposes
+   // alternative would be to store it in a separate JSON object using boost's 
+   // internal representation, or as a string
 
     template<>
     struct adl_serializer<price_t> {

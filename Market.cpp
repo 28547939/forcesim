@@ -108,16 +108,16 @@ Market::do_evaluate(
     Inside the inner loop, the api_mtx mutex is locked to prevent other threads (such as from Interface)
     from making any modifications to the structures that are accessed here, such as the agents or
     their history. (As a result, the iter_block property of the Market will change the "granularity"
-    with which clients can make modifications using the API)
+    with which clients can make modifications using the API, such as emitting Info objects)
 
-    After iterations complete, Subscribers::update is called to get the subscribers to pull their data
-    produced by the recent iterations; Subscribers::update locks its own internal mutex to protect
-    access to its map holding the subscriber objects.
-    That map is also accessed by the Market API (via the Subscribers class), when adding/deleting 
-    subscribers, for example.
+    After an iter_block completes:
+    
+    - Subscribers::update is called to get the subscribers to pull their data
+        produced by the recent iterations; Subscribers::update locks its own internal mutex to protect
+        access to its map holding the subscriber objects. That map is also accessed by the Market API 
+        (via the Subscribers class), when adding/deleting subscribers, for example.
 
-    The op_queue mutex is also locked here, to protect access to the queue of incoming ops sent by
-    other threads such as the Interface.
+    - 
 
 */
 void Market::main_loop() {
@@ -126,10 +126,12 @@ void Market::main_loop() {
     while (true) {
 
         // Lock before the if statement to protect the statements in the condition
+        // locks API access - applies to any client program accessing most methods in the Market class 
+        //  for example the HTTP interface, via the Interface class
         std::unique_lock L_api { this->api_mtx };
 
         if (this->state == state_t::RUNNING && this->agents.size() > 0) {
-            /* number of "sub-" iterations remaining to be considered in this loop iteration */
+            // number of "sub-" iterations remaining to be considered in this loop iteration 
             unsigned int r = std::min(
                 this->iter_block,
                 this->remaining_iter.has_value() 
@@ -155,14 +157,15 @@ info_view can be nullopt, but info_history should never be uninitialized
 
 */
 
-                // if Market::info_history is empty, this is a std::nullopt
+                // info_view: ts::view object to convey Info objects to Agents 
+                // Possible values
+                // if Market::info_history is empty (i.e. no Info objects ever emitted, or the history
+                //      has been deleted), this is a std::nullopt
                 // if global_agent_info_cursor is nullopt, info_view will begin at the beginning of
-                // info_history
+                //      info_history
                 auto info_view = this->info_iterator(this->global_agent_info_cursor);
 
                 const auto p1f = std::chrono::steady_clock::now();
-
-
                 const auto p2s = std::chrono::steady_clock::now();
                 
                 // iteration block - exactly r iterations, which is no more than the iter block
@@ -172,7 +175,6 @@ info_view can be nullopt, but info_history should never be uninitialized
                     auto current_price = existing_price;
                     
                     for (auto& [agent_id, agent_record] : this->agents) {
-
                         if (! agent_record.is_scheduled(this->timept)) {
                             continue;
                         }
@@ -180,7 +182,8 @@ info_view can be nullopt, but info_history should never be uninitialized
                         try {
                             auto info_cursor = agent_record.agent->info_cursor();
 
-                            // pass the info_view to the agent in the same state that it was 
+                            // if applicable, adjust the position in the Info history to wherever this 
+                            // particular agent left it
                             if (info_view.has_value() && info_cursor.has_value()) {
                                 auto info_cursor_v = info_cursor.value();
 
@@ -202,34 +205,26 @@ info_view can be nullopt, but info_history should never be uninitialized
                                 }
                             }
 
+                            // Agent computation
                             auto [agent_action, current_price_new, info_view_ret] = this->do_evaluate(
                                 agent_record, existing_price, current_price, std::move(info_view)
                             );
-
+                            // update price
                             current_price = current_price_new;
-
-    /*
-                            // update the agent's info_cursor if the agent actually read anything
-                            if (agent_record.info_cursor.has_value() && 
-                                info_view->watermark() >= agent_record.info_cursor.value()) 
-                            {
-                                // increment the timepoint_t, since this cursor indicates an unread entry
-                                // not an already-read entry
-                                agent_record.info_cursor = info_view->cursor() + 1;
-                            }
-                            */
-
                             info_view = std::move(info_view_ret);
+
                             // nullopt info_view means it was never initialized before our iteration 
                             // so info_history must be empty
                             if (info_view.has_value()) {
                                 (*info_view)->reset_cursor();
                             }
                             
+                            // nullopt AgentAction means there was an exception during the Agent computation
+                            // (see Agent class)
                             if (agent_action.has_value()) {
                                 agent_record.history->append(agent_action.value());
                             } else {
-                                LOG(WARNING) << "agent_action not set, skipping history entry";
+                                LOG(ERROR) << "agent_action not set, skipping history entry";
                                 agent_record.history->skip(1);
                             }
 
@@ -241,7 +236,6 @@ info_view can be nullopt, but info_history should never be uninitialized
                     }
 
                     this->current_price = current_price;
-
                     this->price_history->append(current_price);
 
                     // increment time regardless of any exceptions
@@ -301,7 +295,7 @@ info_view can be nullopt, but info_history should never be uninitialized
 
                         // if none of the agents had a non-empty info_cursor, keep the 
                         // TODO should not set it to the info_view bounds-  the info_view lower bound is
-                        // incremeneted before the iter block, to reflect an unread entry (check)
+                        // incremented before the iter block, to reflect an unread entry (check)
 
                         auto new_cursor_v = new_cursor.value_or((*info_view)->bounds().first);
                         VLOG(8) << "global_agent_info_cursor updated to " << new_cursor_v;
@@ -341,15 +335,17 @@ info_view can be nullopt, but info_history should never be uninitialized
 
                 this->perf_measurement("info_map", p1s, p1f);
                 this->perf_measurement("iter_block", p2s, p2f);
-            } else {
+            }  // if r > 0 (i.e. iterations remain)
+            else {
                 VLOG(8) << "exiting loop without any iterations; no more iterations remain; "
                     << "setting state=STOPPED";
                 this->state = state_t::STOPPED;
             }
 
-            //release api_mtx
+            // release api_mtx
             L_api.unlock();
 
+            // update Subscribers with any new data from iterations just completed (if any)
             // only run this if there have been iterations - otherwise ts objects will 
             // have no further records to process
             if (r > 0) {
@@ -367,7 +363,9 @@ info_view can be nullopt, but info_history should never be uninitialized
                 L_op.unlock();
             }
 
-        } else {
+        } // if state == RUNNING  AND  agents exist
+        
+        else {
 
             if (this->state == state_t::RUNNING) {
                 VLOG(5) << "state=RUNNING, but no agents are loaded";
@@ -377,23 +375,31 @@ info_view can be nullopt, but info_history should never be uninitialized
             // api_mtx only applies to functionality in the true side of the if statement
             L_api.unlock();
 
-
-            /* 
-                If we are not RUNNING, wait for new items on the op_queue (waiting, for example, for an 
-                op that will change our state to RUNNING)
-            */
-            /*
-                Using the same mutex and lock for both the CV wait/notification and the 
-                mutual exclusion on the op
-            */
+            // when not in the RUNNING state, the Market goes "idle", waiting for an `op` to (re-)enter
+            // the RUNNING state with additional iterations
             L_op.lock();
             VLOG(8) << "state=STOPPED, waiting on op_queue";
             this->op_queue_cv.wait(L_op);
-            this->op_execute_helper();
-            L_op.unlock();
+            while (true) {
+                // try to process another op on the queue (if any)
+                bool nonempty = this->op_execute_helper();
 
-            // TODO after successfully running an op, check again for more ops before 
-            // continuing with the main loop
+                L_op.unlock();
+                // allow additional ops to be queued while we don't hold the lock
+
+                // only try processing another op if there was one on the queue on the previous attempt
+                // if not, any ops that have just been queued (just after we unlocked above) can
+                // wait until the next opportunity
+                if (nonempty == true) {
+                    // attempt to try reading from the op queue again, but if the lock is being held
+                    // at this moment, don't bother; any pending ops can wait until later
+                    if (! L_op.try_lock()) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
         }
     }
 
@@ -466,14 +472,16 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
 */
 
 
-void Market::queue_op(std::shared_ptr<op_abstract> op) {
+void 
+Market::queue_op(std::shared_ptr<op_abstract> op) {
     const std::lock_guard<std::mutex> lock(this->op_queue_mtx);
     this->op_queue.push(op);
     this->op_queue_cv.notify_one();
 }
 
 
-void Market::configure(Config c) {
+void 
+Market::configure(Config c) {
     if (c.iter_block.has_value()) {
         this->iter_block.store(c.iter_block.value());
     }
@@ -482,7 +490,8 @@ void Market::configure(Config c) {
 }
 
 
-void Market::run(std::optional<int> count) {
+void 
+Market::run(std::optional<int> count) {
     std::lock_guard L(this->api_mtx);
 
     if (count.has_value()) {
@@ -497,14 +506,16 @@ void Market::run(std::optional<int> count) {
     this->state = state_t::RUNNING;
 }
 
-void Market::stop() {
+void 
+Market::stop() {
     std::lock_guard L(this->api_mtx);
 
     this->state = state_t::STOPPED;
     this->remaining_iter = 0;
 }
 
-void Market::reset() {
+void 
+Market::reset() {
     std::lock_guard L(this->api_mtx);
     using Ss = Subscriber::Subscribers;
     this->stop();
@@ -739,12 +750,18 @@ Market::test_evaluate(
 
 
 
-void Market::op_execute_helper() {
+// returns true if there were any items on the queue
+bool 
+Market::op_execute_helper() {
+    bool ret = false;
     while (this->op_queue.size() > 0) {
         std::shared_ptr<op_abstract> op = this->op_queue.front();
         this->op_queue.pop();
         op->execute(*this);
+        ret = true;
     }
+
+    return ret;
 }
 
 };

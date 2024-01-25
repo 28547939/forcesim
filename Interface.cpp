@@ -1,12 +1,6 @@
 
-/*
 
-https://github.com/CrowCpp/Crow
-
-
-*/
-
-
+// https://github.com/CrowCpp/Crow
 #include <crow.h>
 #include <nlohmann/json.hpp>
 #include "Agent.h"
@@ -25,13 +19,7 @@ https://github.com/CrowCpp/Crow
 using json = nlohmann::json;
 using namespace std;
 
-/*
-change to errors codes in main body of response
-list helper / multi request: return (code, msg) tuples, set main error code to Multi
-in py, if multi, detect and return in the exception the (code, msg) items to client with the corresponding 
-    request data    
 
-*/
 
 namespace {
 
@@ -40,7 +28,34 @@ namespace {
     // (in most other situations, we use specific JSON conversion functions defined
     // in json_conversion.cpp, automatically called by the JSON library)
 
-    std::map<std::string, std::function<unique_ptr<Agent>(json)>> agent_factory {
+    using agent_factory_map_t = 
+        std::map<enum AgentType, std::function<unique_ptr<Agent>(json)>>;
+
+    template<enum AgentType T>
+    agent_factory_map_t::value_type
+    agent_factory_generator() {
+        return {
+            T,
+            [](json y) {
+                auto agent_ptr = new Agent_impl<T>(AgentConfig<T>(y));
+
+                // otherwise we have an "ambiguous derived -> base cast" error 
+                // in the case of ModeledCohortAgent_v2 (or any other agent type
+                // which inherits from another agent type)
+                //auto agent_ptr_base = dynamic_cast<Agent_base<T>*>(agent_ptr);
+                auto agent_ptr_base = dynamic_cast<Agent*>(agent_ptr);
+
+                return unique_ptr<Agent>(agent_ptr_base);
+            }
+        };
+    }
+
+    agent_factory_map_t agent_factory {
+        agent_factory_generator<AgentType::Trivial>(),
+        agent_factory_generator<AgentType::BasicNormalDist>(),
+        agent_factory_generator<AgentType::ModeledCohort_v1>(),
+        agent_factory_generator<AgentType::ModeledCohort_v2>()
+        /*
         { "TrivialAgent", 
             [](json y) {
                 return unique_ptr<Agent>(
@@ -72,6 +87,7 @@ namespace {
                 );
             }
         },
+        */
     };
 
 };
@@ -83,13 +99,20 @@ namespace {
     // constructing Subscriber instances from data provided over the HTTP interface
 
 
-    // generates an element in the subscriber_factory_factory map
+    // subscriber_factory_factory_generator generates an element in the 
+    //  subscriber_factory_factory map. The subscriber_factory_factory map
+    //  provides a subscriber_factory_factory given a subscriber type (RecordType),
+    //  which in turn provides a Subscriber Factory (cast to AbstractFactory), given
+    //  a parameter. The Factory will create the unique Subscriber associated with 
+    //  that parameter.
+    //      
+    //
     // RecordType (as enum)     ->      function which returns an AbstractFactory 
     //                                  given a FactoryParameter<RecordType> in JSON form
     template<typename RecordType>
     std::pair<
         record_type_t, 
-        std::function<std::shared_ptr<Subscriber::AbstractFactory>(json)>
+        std::function<std::shared_ptr<AbstractFactory>(json)>
     > subscriber_factory_factory_generator() {
         return {
             constraint<RecordType>::t,
@@ -101,8 +124,8 @@ namespace {
     }
 
     std::map<
-        Subscriber::record_type_t, 
-        std::function<std::shared_ptr<Subscriber::AbstractFactory>(json)>
+        record_type_t, 
+        std::function<std::shared_ptr<AbstractFactory>(json)>
     > subscriber_factory_factory = 
     {
         subscriber_factory_factory_generator<AgentAction>(),
@@ -120,6 +143,208 @@ std::shared_ptr<Interface> Interface::get_instance(std::shared_ptr<Market::Marke
 
     return Interface::instance;
 }
+
+/*
+ ****************************************************************************************
+ Generic list/array handling routines (see Interface.h)
+*/
+
+// this type allows the list_helper handler to return:
+//  - a JSON object when RetKey is string, 
+//  - a "bare" list with just the RetVal objects when RetKey is an int, 
+//  - a list of pairs when RetKey is some other type.
+//
+// in the second case, by "bare" list, I mean that a value's index in the returned list
+//  is just equal to the integer key for that value.
+//  eg. { 1: A, 0: B } returns the JSON array: [ A, B ]
+
+template<typename RetKey>
+struct list_json_ret_t {
+    typename std::map<RetKey, json> data_ret;
+
+    void add(RetKey&& k, json&& v) {
+        this->data_ret.emplace(k, v);
+    }
+
+    void add(const RetKey& k, json&& v) {
+        this->data_ret.insert({ k, v });
+    }
+
+    json dump() { return json(this->data_ret); }
+};
+
+template<>
+struct list_json_ret_t<int> {
+    typename std::vector<json> data_ret;
+
+    void add(int i, json&& v) {
+        this->data_ret.emplace(this->data_ret.begin() + i, v);
+    }
+
+    json dump() { return json(this->data_ret); }
+};
+
+
+std::optional<json> Interface::handle_json(const crow::request& req, crow::response& res) {
+    auto interface = Interface::instance;
+
+    try {
+        return json::parse(req.body);
+    } catch (json::parse_error& e) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_parse_error, 
+            string("JSON parse error: ") + e.what(), {}, 
+            std::nullopt,
+            400
+        );
+        res.end();
+        return std::nullopt;
+    }
+}
+
+void Interface::handle_json_wrapper(
+    const crow::request& req, crow::response& res,
+    std::function<void(const crow::request& req, crow::response& res, json&)> f
+) {
+    auto interface = Interface::instance;
+
+    auto jreq_opt = interface->handle_json(req, res);
+    if (!jreq_opt.has_value()) {
+        return;
+    }
+
+    auto jreq = jreq_opt.value();
+
+    f(req, res, jreq);
+}
+
+std::optional<std::deque<json>>
+Interface::handle_json_array(const crow::request& req, crow::response& res) {
+    auto interface = Interface::instance;
+
+    // TODO possibly use wrapper with template return
+    auto jreq_opt = interface->handle_json(req, res);
+    if (!jreq_opt.has_value()) {
+        return std::nullopt;
+    }
+    auto jreq = jreq_opt.value();
+
+    if (!jreq.is_array()) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_type_error, 
+            std::string("request body must be JSON array"),  {}, 
+            std::nullopt,
+            400);
+        res.end();
+        return std::nullopt;
+    }
+
+    return jreq.get<std::deque<json>>();
+}
+
+void Interface::handle_json_array_wrapper(
+    const crow::request& req, crow::response& res,
+    std::function<void(const crow::request& req, crow::response& res, std::deque<json>&)> f
+) {
+    auto interface = Interface::instance;
+
+    auto jreq_opt = interface->handle_json_array(req, res);
+    if (!jreq_opt.has_value())
+        return;
+
+    auto jreq = jreq_opt.value();
+
+    f(req, res, jreq);
+}
+
+template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
+void Interface::list_helper(
+    const crow::request& req, 
+    crow::response& res, 
+    HandlerType handler_f,
+    std::optional<std::function<void(int)>> finally_f 
+) 
+{
+    auto interface = Interface::instance;
+    
+    auto json_deque_opt = Interface::handle_json_array(req, res);
+    if (!json_deque_opt.has_value()) {
+        return;
+    }
+
+    std::deque<json> json_deque = json_deque_opt.value();
+    std::deque<InputItem> input_vec;
+
+    json most_recent_conversion;
+    try {
+        std::transform(json_deque.begin(), json_deque.end(), std::back_inserter(input_vec),
+        [&most_recent_conversion](json j) {
+            most_recent_conversion = j;
+            return j.get<InputItem>();
+        });
+    } catch (std::exception& e) {
+        res = interface->build_json_crow(InterfaceErrorCode::Json_type_error, 
+            string("encountered error during type conversion: ") + e.what(), 
+            most_recent_conversion, 
+            std::nullopt, 
+            400
+        );
+        res.end();
+        return;
+    }
+
+    list_retmap_t<RetKey, RetVal> retmap;
+
+    list_helper_adapter<InputItem, RetKey, RetVal, HandlerType> adapter;
+    adapter(handler_f, interface, input_vec, retmap);
+
+    if (finally_f.has_value()) {
+        (finally_f.value())(retmap.size());
+    }
+
+    std::deque<RetKey> error_keys = std::accumulate(retmap.begin(), retmap.end(), std::deque<RetKey>{}, 
+        [](std::deque<RetKey> acc, auto& pair) { 
+            if (std::holds_alternative<list_error_t>(pair.second)) {
+                acc.push_back(pair.first);
+            }
+            return acc;
+        }
+    );
+    int error_count = error_keys.size();
+
+    list_json_ret_t<RetKey> data_ret;
+
+    for (auto& pair : retmap) {
+        data_ret.add(pair.first, std::visit(
+            //  this lambda is "polymorphic" and converts both possible types to 
+            //  JSON using the json class's polymorphic constructor
+            [](auto&& x) {
+                return json(x);
+            },
+            pair.second
+        ));
+    }
+
+    res = interface->build_json_crow(
+        error_count > 0 
+            ? std::optional<enum InterfaceErrorCode>(InterfaceErrorCode::Multiple) 
+            : std::nullopt,
+        error_count > 0 
+            ? std::string("completed with ") + std::to_string(error_count) + std::string(" errors")
+            : "completed without errors"
+        ,
+        json {
+            { "error_keys", json(error_keys) },
+            { "data", data_ret.dump() }
+        },
+        detect_multi_response_type<RetKey>::value
+    );
+    res.end();
+}
+
+/*
+ ****************************************************************************************
+*/
 
 void Interface::crow__market_run(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
@@ -281,211 +506,6 @@ Interface::crow__get_price_history(const crow::request& req, crow::response& res
     });
 }
 
-
-
-
-
-// this type allows the list_helper handler to return:
-//  - a JSON object when RetKey is string, 
-//  - a "bare" list with just the RetVal objects when RetKey is an int, 
-//  - a list of pairs when RetKey is some other type.
-//
-// in the second case, by "bare" list, I mean that a value's index in the returned list
-//  is just equal to the integer key for that value.
-//  eg. { 1: A, 0: B } returns the JSON array: [ A, B ]
-
-template<typename RetKey>
-struct list_json_ret_t {
-    typename std::map<RetKey, json> data_ret;
-
-    void add(RetKey&& k, json&& v) {
-        this->data_ret.emplace(k, v);
-    }
-
-    void add(const RetKey& k, json&& v) {
-        this->data_ret.insert({ k, v });
-    }
-
-    json dump() { return json(this->data_ret); }
-};
-
-template<>
-struct list_json_ret_t<int> {
-    typename std::vector<json> data_ret;
-
-    void add(int i, json&& v) {
-        this->data_ret.emplace(this->data_ret.begin() + i, v);
-    }
-
-    json dump() { return json(this->data_ret); }
-};
-
-
-std::optional<json> Interface::handle_json(const crow::request& req, crow::response& res) {
-    auto interface = Interface::instance;
-
-    try {
-        return json::parse(req.body);
-    } catch (json::parse_error& e) {
-        res = interface->build_json_crow(
-            InterfaceErrorCode::Json_parse_error, 
-            string("JSON parse error: ") + e.what(), {}, 
-            std::nullopt,
-            400
-        );
-        res.end();
-        return std::nullopt;
-    }
-}
-
-void Interface::handle_json_wrapper(
-    const crow::request& req, crow::response& res,
-    std::function<void(const crow::request& req, crow::response& res, json&)> f
-) {
-    auto interface = Interface::instance;
-
-    auto jreq_opt = interface->handle_json(req, res);
-    if (!jreq_opt.has_value()) {
-        return;
-    }
-
-    auto jreq = jreq_opt.value();
-
-    f(req, res, jreq);
-}
-
-std::optional<std::deque<json>>
-Interface::handle_json_array(const crow::request& req, crow::response& res) {
-    auto interface = Interface::instance;
-
-    // TODO possibly use wrapper with template return
-    auto jreq_opt = interface->handle_json(req, res);
-    if (!jreq_opt.has_value()) {
-        return std::nullopt;
-    }
-    auto jreq = jreq_opt.value();
-
-    if (!jreq.is_array()) {
-        res = interface->build_json_crow(
-            InterfaceErrorCode::Json_type_error, 
-            std::string("request body must be JSON array"),  {}, 
-            std::nullopt,
-            400);
-        res.end();
-        return std::nullopt;
-    }
-
-    return jreq.get<std::deque<json>>();
-}
-
-void Interface::handle_json_array_wrapper(
-    const crow::request& req, crow::response& res,
-    std::function<void(const crow::request& req, crow::response& res, std::deque<json>&)> f
-) {
-    auto interface = Interface::instance;
-
-    auto jreq_opt = interface->handle_json_array(req, res);
-    if (!jreq_opt.has_value())
-        return;
-
-    auto jreq = jreq_opt.value();
-
-    f(req, res, jreq);
-}
-
-template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
-void Interface::list_helper(
-    const crow::request& req, 
-    crow::response& res, 
-    HandlerType handler_f,
-    std::optional<std::function<void(int)>> finally_f 
-) 
-{
-    auto interface = Interface::instance;
-    
-    auto json_deque_opt = Interface::handle_json_array(req, res);
-    if (!json_deque_opt.has_value()) {
-        return;
-    }
-
-    std::deque<json> json_deque = json_deque_opt.value();
-    std::deque<InputItem> input_vec;
-
-    json most_recent_conversion;
-    try {
-        std::transform(json_deque.begin(), json_deque.end(), std::back_inserter(input_vec),
-        [&most_recent_conversion](json j) {
-            most_recent_conversion = j;
-            return j.get<InputItem>();
-        });
-    } catch (std::exception& e) {
-        res = interface->build_json_crow(InterfaceErrorCode::Json_type_error, 
-            string("encountered error during type conversion: ") + e.what(), 
-            most_recent_conversion, 
-            std::nullopt, 
-            400
-        );
-        res.end();
-        return;
-    }
-
-    list_retmap_t<RetKey, RetVal> retmap;
-
-    list_helper_adapter<InputItem, RetKey, RetVal, HandlerType> adapter;
-    adapter(handler_f, interface, input_vec, retmap);
-
-    if (finally_f.has_value()) {
-        (finally_f.value())(retmap.size());
-    }
-
-/*
-    int error_count = std::accumulate(retmap.begin(), retmap.end(), false, 
-        [](int acc, auto& pair) { 
-            return acc + (std::holds_alternative<list_error_t>(pair.second) ? 1 : 0); 
-        }
-    );
-    */
-
-    std::deque<RetKey> error_keys = std::accumulate(retmap.begin(), retmap.end(), std::deque<RetKey>{}, 
-        [](std::deque<RetKey> acc, auto& pair) { 
-            if (std::holds_alternative<list_error_t>(pair.second)) {
-                acc.push_back(pair.first);
-            }
-            return acc;
-        }
-    );
-    int error_count = error_keys.size();
-
-    list_json_ret_t<RetKey> data_ret;
-
-    for (auto& pair : retmap) {
-        data_ret.add(pair.first, std::visit(
-            //  this lambda is "polymorphic" and converts both possible types to 
-            //  JSON using the json class's polymorphic constructor
-            [](auto&& x) {
-                return json(x);
-            },
-            pair.second
-        ));
-    }
-
-    res = interface->build_json_crow(
-        error_count > 0 
-            ? std::optional<enum InterfaceErrorCode>(InterfaceErrorCode::Multiple) 
-            : std::nullopt,
-        error_count > 0 
-            ? std::string("completed with ") + std::to_string(error_count) + std::string(" errors")
-            : "completed without errors"
-        ,
-        json {
-            { "error_keys", json(error_keys) },
-            { "data", data_ret.dump() }
-        },
-        detect_multi_response_type<RetKey>::value
-    );
-    res.end();
-}
-
 void 
 Interface::crow__add_agents(const crow::request& req, crow::response& res) {
 
@@ -493,40 +513,56 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
         (req, res, 
         [](auto interface, agent_config_item& spec) -> list_ret_t<std::deque<Market::agentid_t>>
     {
-        auto factory_element = agent_factory.find(spec.type);
 
-        if (factory_element == agent_factory.end()) {
+
+        auto t_it = str_agenttype.find(spec.type);
+        std::optional<std::string> errstr;
+
+        if (t_it == str_agenttype.end()) {
+            errstr = std::string("unknown agent type: "+ spec.type);
+        } else {
+            AgentType t = t_it->second;
+            auto factory_element = agent_factory.find(t);
+
+            if (factory_element == agent_factory.end()) {
+                errstr = std::string("factory not implemented: ") + spec.type;
+            } else {
+                std::deque<Market::agentid_t> ids;
+                for (int i = 0; i < spec.count; i++) {
+
+                    try {
+                        unique_ptr<Agent> agent = (factory_element->second)(spec.config);
+                        ids.push_back(interface->market->add_agent(std::move(agent)));
+                    } 
+                    // something wrong with a value in AgentConfig (spec.config)
+                    catch (std::invalid_argument& e) {
+                        return std::tuple<enum InterfaceErrorCode, std::string> ({
+                            InterfaceErrorCode::Agent_config_error,
+                            e.what()
+                        });
+                    }
+                    // missing value from AgentConfig (tried to access non-existent JSON object key)
+                    catch (json::out_of_range& e) {
+                        return std::tuple<enum InterfaceErrorCode, std::string> ({
+                            InterfaceErrorCode::Agent_config_error,
+                            e.what()
+                        });
+                    }
+
+                }
+
+                return ids;
+            }
+        }
+
+        if (errstr.has_value()) {
             return std::tuple<enum InterfaceErrorCode, std::string> ({ 
                 InterfaceErrorCode::Agent_not_implemented,
-                std::string("factory not implemented: ") + spec.type
+                errstr.value()
             });
+        } else {
+            throw std::logic_error("crow__add_agents: no value was returned");
         }
-
-        std::deque<Market::agentid_t> ids;
-        for (int i = 0; i < spec.count; i++) {
-
-            try {
-                unique_ptr<Agent> agent = (factory_element->second)(spec.config);
-                ids.push_back(interface->market->add_agent(std::move(agent)));
-            } 
-            // something wrong with a value in AgentConfig (spec.config)
-            catch (std::invalid_argument& e) {
-                return std::tuple<enum InterfaceErrorCode, std::string> ({
-                    InterfaceErrorCode::Agent_config_error,
-                    e.what()
-                });
-            }
-            // missing value from AgentConfig
-            catch (json::out_of_range& e) {
-                return std::tuple<enum InterfaceErrorCode, std::string> ({
-                    InterfaceErrorCode::Agent_config_error,
-                    e.what()
-                });
-            }
-
-        }
-
-        return ids;
     });
 }
 
@@ -619,6 +655,8 @@ void Interface::crow__get_agent_history(const crow::request& req, crow::response
 }
 
 
+// TODO
+// Not a high priority item, since this is taken care of with market_reset
 void Interface::crow__delete_agent_history(const crow::request& req, crow::response& res) {
     json jreq = json::parse(req.body);
 
@@ -831,16 +869,6 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
     market(m)
 {
 
-/*
-    CROW_ROUTE(this->crow_app, "/version")([](){
-        crow::json::wvalue x({{"version", 0.1}});
-        return x;
-    });
-    */
-
-    
-    //const Crow_handlers *crow_handlers = &this->crow_handlers;
-
     CROW_ROUTE(this->crow_app, "/market/run")
     .methods("POST"_method)(&Interface::crow__market_run);
 
@@ -897,9 +925,12 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
 
 }
 
-bool Interface::start() {
+bool Interface::start(std::optional<boost::asio::ip::address> listen_addr, int port) {
     try {
-        this->crow_app.port(18080).multithreaded().run();
+        if (!listen_addr.has_value()) {
+            listen_addr = boost::asio::ip::address::from_string("0.0.0.0");
+        }
+        this->crow_app.bindaddr(listen_addr->to_string()).port(port).multithreaded().run();
         return true;
     } catch (std::runtime_error& e) {
         std::printf("Interface::start: %s", e.what());
@@ -908,6 +939,7 @@ bool Interface::start() {
 }
 
 // TODO json return object with setter methods to incrementally 
+// build response without worrying about argument position
 
 json Interface::build_json(
     std::optional<enum InterfaceErrorCode> error_code, 

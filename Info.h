@@ -97,7 +97,7 @@ namespace Info {
 
 
 /*
-TODO
+TODO not going with this design
     typedef std::variant<
         Info<Types::Subjective>,
         Info<Types::Test1>

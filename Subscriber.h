@@ -48,7 +48,7 @@ enum class subscriber_flag_t {
     // and emitted to endpoints before the subscriber can be deleted
     Dying,
 
-    // whether the subscriber has finished processing AND emitting all available records
+    // whether the subscriber has finished processing all available records
     // this is set to false when Base_subscriber::update processes new records and makes them 
     //  available to be emitted
     // this is set to true when all the currently processed records have been converted, removed
@@ -116,8 +116,8 @@ struct Config {
     uintmax_t granularity;
 
     // wait until thre are chunk_min_records which are converted to JSON before emitting
-    // to a the endpoint
-    // (exception: when we flush the subscriber, any remaining pending records are sent)
+    // to the endpoint
+    // (exception: when we shutdown the subscriber, any remaining pending records are sent)
     uintmax_t chunk_min_records;
 };
 
@@ -148,7 +148,7 @@ struct Endpoints {
         of the same UDP endpoint will reference the single Endpoint object representing that 
         UDP endpoint, as stored here.
 
-        We use a separate "Endpoints" class to allow both the AbstractSubscriber and Subscribers classes 
+        We use this separate "Endpoints" class to allow both the AbstractSubscriber and Subscribers classes 
         to access the endpoints map. AbstractSubscriber should have access to allow automatic Endpoint 
         refcount decrementing when a subscriber is destroyed, since that functionality is the same
         across all subscribers.
@@ -171,6 +171,7 @@ struct Endpoints {
 
 // base class for all subscriber objects
 // permits us to keep all subscribers in a single data structure (see static Subscribers class)
+// without using variants (using dynamic dispatch instead)
 class AbstractSubscriber {
     std::set<enum subscriber_flag_t> _flags;
     std::recursive_mutex flags_cv_mtx;
@@ -241,6 +242,7 @@ class AbstractSubscriber {
         std::lock_guard L { this->mtx };
         this->_flags.clear(); 
     }
+    // wait until a specific flag is set
     void wait_flag(enum subscriber_flag_t f) {
         if (this->flags().contains(f)) {
             return;
@@ -257,13 +259,16 @@ class AbstractSubscriber {
     //  specifically, this happens directly after the subscriber stores its newly obtained records
     //      in its internal data structure, but before the records have been converted to JSON
     //      and emitted to an endpoint.
-    //      to wait for that point in time, use wait_flag(subscriber_flag_t::Flushed)
-    // the optional argument will cause us to additionally wait until the subscriber has processed
+    //      to wait further, for the point in time directly after the subscriber converted the records
+    //          to JSON and relinquished control of them to the client (Subscribers class manager thread),
+    //              use wait_flag(subscriber_flag_t::Flushed)
+    //
+    // the optional argument to wait() will cause us to additionally wait until the subscriber has processed
     //  records up to and including the specified timepoint
     //      note that, when the Market stops, the subscriber will stop reading at a point less than
     //          the Market's current time iff $granularity > 1, in which case providing the Market's
     //          current time to wait() will
-    //          result in waiting indefinitely (until the Market restarts and passes that time)
+    //          result in waiting indefinitely (until the Market restarts and the Subscriber passes that time)
     virtual void wait(const std::optional<timepoint_t> t) final {
         std::unique_lock L(this->mtx);
 
@@ -275,7 +280,8 @@ class AbstractSubscriber {
 
 
     // the exact way that the subscriber obtains and stores its records depends on the 
-    // subscriber type; the program needs access to this method to trigger this process
+    // subscriber type; the client code (Market class) needs access to this method to trigger 
+    // this process (Market does this between iteration blocks)
     virtual std::pair<uintmax_t, uintmax_t>
     update(std::shared_ptr<Market::Market>, const timepoint_t&) = 0;
 
@@ -283,6 +289,7 @@ class AbstractSubscriber {
     // records (their existence being reflected in pending_record_count) to a sequence of JSON
     // objects, which are intended to be ready to send to the UDP endpoint as-is (i.e. each JSON
     // object will be exactly the payload of a UDP message)
+    //      currently this conversion process is triggered by the Subscibers class manager thread
     //
     // part of this process is the same across subscribers, which we are able to define here;
     // the type-specific part of the process is handled by convert_chunk, below.
@@ -320,11 +327,11 @@ class AbstractSubscriber {
         return ret;
     }
 
-
     // Convert multiple remaining records, assembling them into a JSON object that
     //  is ready to be sent to an endpoint in its own packet (i.e. one packet/datagram per chunk)
     // Takes records from pending_records (see Base_subscriber, below)
-    virtual std::optional<std::unique_ptr<json>> convert_chunk(int) = 0;
+    virtual std::optional<std::unique_ptr<json>> 
+    convert_chunk(int) = 0;
 
 };
 
@@ -346,13 +353,14 @@ class Subscribers {
     //      the program can change the poll interval during runtime by modifying this variable 
     static inline std::atomic<int> manager_thread_poll_interval;
 
-    // TODO
+    // TODO not yet implemented
     static inline std::atomic<bool> shutdown_signal;
 
     // call update on all the subscribers
     static uintmax_t update(std::shared_ptr<Market::Market>, const timepoint_t&);
 
     // add one or more subscribers
+    // variant contains either the ID associated with the successful operation, or a string error message
     static std::variant<id_t, std::string>
     add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair);
     static std::deque< std::variant<Subscriber::id_t, std::string> >
@@ -376,16 +384,18 @@ class Subscribers {
         std::string endpoint;
         record_type_t record_type;
     };
-    static std::deque<list_entry_t> list();
+    static std::deque<list_entry_t> 
+    list();
 
     // call the wait method on the subscriber with a given id (see AbstractSubscriber::wait)
-    static void wait(const id_t& id, const timepoint_t& tp) {
+    static bool wait(const id_t& id, const timepoint_t& tp) {
         auto it = idmap.find(id);
         if (it == idmap.end()) {
-            return;
+            return false;
         }
 
         (it->second)->wait(tp);
+        return true;
     }
 
     // to be called once; the manager thread periodically calls subscribers' JSON conversion
@@ -398,6 +408,7 @@ class Subscribers {
 
 
 
+// static association between the template type parameters and our enum values
 template<typename T>
 struct constraint {};
 template<> struct constraint<AgentAction> { inline static const record_type_t t = record_type_t::AGENT_ACTION; };
@@ -405,6 +416,7 @@ template<> struct constraint<price_t> { inline static const record_type_t t = re
 template<> struct constraint<Info::Abstract> { inline static const record_type_t t = record_type_t::INFO; };
 
 
+// templated mix-in sitting below AbstractSubscriber and above the specific Subscriber (Impl) classes
 template<typename RecordType, 
     typename = std::enable_if_t<
         std::is_same<RecordType, AgentAction>::value || 
@@ -446,10 +458,14 @@ class Base_subscriber : public AbstractSubscriber {
         }
 
         // our unique Factory instance is now aware of our ID
+        // destruction of this Base_subscriber instance will trigger the Factory instance's 
+        //  destructor
         this->factory->associate(this->id);
     }
 
+    // this function is called by the Subscribers class manager thread
     // most of the chunk conversion process is the same for all subscribers
+    // part that is specific to specific subscriber classes is in convert_chunk_impl
     virtual std::optional<std::unique_ptr<json>> 
     convert_chunk(int max_records) final {
         std::lock_guard L { this->mtx };
@@ -463,6 +479,8 @@ class Base_subscriber : public AbstractSubscriber {
         // move the records out of the main pending_records map and into this map
         // one alternative would be to iterate over pending_records, constructing JSON
         // for each key, then combine the JSON entries into the resulting JSON array
+        // it's not possible to provide begin/end iterators for a container to the json 
+        //      constructor
         std::map<timepoint_t, const RecordType> output;
 
         // we have already processed all the records
@@ -490,8 +508,8 @@ class Base_subscriber : public AbstractSubscriber {
 
     // take the raw JSON chunk (sequence of records) and prepare it for transmission;
     // specific to the subscriber type
+    // generally just adds some metadata / an appropriate JSON object key
     virtual std::unique_ptr<json> convert_chunk_impl(json&&) = 0;
-
 
     // Returns 
     //  { period of time processed, total new records processed (new_pending_records) }
@@ -500,7 +518,9 @@ class Base_subscriber : public AbstractSubscriber {
     // were errors during the loop, or empty entries.
     //
     // The period of time processed is always 
-    //  ending cursor  -  (starting cursor   -   granularity)
+    //      ending cursor  -  (starting cursor   -   granularity)
+    // since the period of time begins from the last element that we processed, and that element
+    // is always granularity steps away from the first elemen that we process here (starting cursor)
     virtual std::pair<uintmax_t, uintmax_t>
     update(std::shared_ptr<Market::Market> m, const timepoint_t& m_now) final {
         std::unique_lock L { this->mtx, std::defer_lock };
@@ -542,6 +562,10 @@ class Base_subscriber : public AbstractSubscriber {
         // last record processed during the previous invocation and the first record
         // processed during this invocation - this is exactly equal to granularity
         uintmax_t period = tp - this->cursor + granularity;
+
+        // cursor points to the next element (in the future) to be read
+        // it's set in the `tp += granularity` expression in the for loop above,
+        // so the cursor is always progressing in steps of `granularity`
         this->cursor = tp;
 
         VLOG(9) << "subscriber updated " << new_pending_records << " records";
@@ -635,13 +659,19 @@ class Impl<price_t> : public Base_subscriber<price_t>
 // a subscriber instance, depending on its RecordType, is associated with a parameter
 // that is used to select the data that it obtains from the Market and transmit to endpoints.
 // the parameter must be provided to the Factory to create the subscriber object (see 
-// Factory::operator(), below)
+// Factory::operator(), below). A subscriber instance always has exactly one parameter
+// throughout its lifetime.
 //
 // the Factory class, used as the factory for subscribers, also maintains a static internal map 
-// to track which subscribers are associated with which parameters (see Factory::idmap, below)
+// to track which subscriber instances are associated with which parameters (see Factory::idmap,
+// below), using the subscriber IDs; and subscriber instances can be found from their IDs using the 
+// main map in the Subscribers class.
 //
 // in general the FactoryParameter can take any form, so we represent it as a struct; a null/trivial
 // parameter is just represented by an empty struct, as in the case of price_t.
+// 
+// in the future, we might have RecordType = Info (with parameter being the type of Info) or 
+// RecordType = AgentTrace (parameter being agent ID)
 
 template<typename RecordType>
 struct FactoryParameter;
@@ -674,7 +704,14 @@ struct Factory : AbstractFactory
     protected:
 
     // ID of the subscriber that this factory instance is associated with, if any
-    // the Base_subscriber constructor calls Factory
+    // the Base_subscriber constructor calls Factory::associate to ensure that,
+    // upon destruction of that subscriber instance (and destruction of the Base_subscriber),
+    // the Factory will know which ID to clear from its map when it itself is destroyed.
+    // (see associate, ~Factory, delete_id below)
+    //
+    // The Factory is destroyed because an instance of it is stored in the Base_subscriber
+    // during construction of the subscriber. (see operator(), below)
+
     std::optional<id_t> id;
     inline static typename std::map<FactoryParameter<RecordType>, std::set<id_t>> idmap;
     inline static std::mutex id_mtx;
@@ -710,8 +747,8 @@ struct Factory : AbstractFactory
     {}
 
 
-    /*  When the unique factory instance stored in a Subscriber is destroyed
-        (which should only happen when the Subscriber is destroyed), the 
+    /*  When the unique factory instance stored in a subscriber (via Base_subscriber) is destroyed
+        (which should only happen when the subscriber is destroyed), the 
         factory instance updates the status map to remove the subscriber's
         ID from the type-specific map.
 
@@ -803,13 +840,16 @@ struct Factory : AbstractFactory
 //
 void to_json(json& j, const record_type_t t);
 
-namespace boost::asio::ip {
-void from_json(const json& j, ba::ip::address& addr);
+/*
+namespace ::boost::asio::ip {
+    void from_json(const json& j, ba::ip::address& addr);
 };
+*/
 
 void from_json(const json&, Config&);
 
 void from_json(const json&, EndpointConfig&);
+void to_json(json& j, const EndpointConfig c);
 
 void from_json(const json&, FactoryParameter<AgentAction>&); 
 void from_json(const json&, FactoryParameter<price_t>&); 

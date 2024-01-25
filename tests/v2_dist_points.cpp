@@ -17,6 +17,10 @@
 
 using json = nlohmann::json;
 
+// given an Agent (ModeledCohortAgent_v2) configuration (present in some JSON file), instantiate 
+// the agent and output the results of compute_distribution_points, including trace data,
+// providing the agent with a current price and price view
+
 void print_agentaction(price_t p, AgentAction a) {
 	std::cout 
 		<< "price=" << std::to_string(static_cast<double>(p))

@@ -86,8 +86,6 @@ class timepoint_t {
         this->tp.store(_tp.tp.load());
     }
 
-    // TODO ostream
-
     auto operator<=> (const timepoint_t& x) const = default;
     bool operator< (const timepoint_t& other) const = default;
     bool operator== (const timepoint_t& x) const = default;
