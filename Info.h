@@ -51,10 +51,12 @@ namespace Info {
 
     template<>
     struct Info<Types::Subjective> : public Base<Types::Subjective> {
-        /* must be in [0, 100]
-            A value of 0 means "completely objective", 100 means "completely subjective"
-        */
+        // subjectivity_extent must be in [0, 100]
+        //  A value of 0 means "completely objective", 100 means "completely subjective"
         float subjectivity_extent;
+
+        // the "true" price that can be inferred from some model or process that interprets
+        // the content of the information (which is unspecified)
         price_t price_indication;
 
         // Whether the price indication is a "premium", i.e. should be taken

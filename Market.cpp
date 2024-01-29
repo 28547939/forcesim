@@ -71,6 +71,8 @@ std::ostream& operator<<(std::ostream& os, const timepoint_t& tp) {
 }
 */
 
+Market::~Market() {}
+
 
 inline std::tuple<std::optional<AgentAction>, price_t, std::optional<info_view_t>> 
 Market::do_evaluate(
@@ -482,6 +484,7 @@ Market::queue_op(std::shared_ptr<op_abstract> op) {
 
 void 
 Market::configure(Config c) {
+    // atomic - no need for mutex
     if (c.iter_block.has_value()) {
         this->iter_block.store(c.iter_block.value());
     }

@@ -209,7 +209,7 @@ class Market : public std::enable_shared_from_this<Market> {
 
             this->initialize_perf_map();
         }
-        ~Market() {}
+        virtual ~Market();
 
         // TODO not yet used - to be used to react to SIGINT/SIGTERM etc
         static inline std::atomic<bool> shutdown_signal;
@@ -275,9 +275,6 @@ class Market : public std::enable_shared_from_this<Market> {
             this->initialize_perf_map();
         }
 
-        /*  API 
-            All of these methods lock on Market::api_mtx
-        */
 
         void queue_op(std::shared_ptr<op_abstract> op);
 
@@ -301,6 +298,9 @@ class Market : public std::enable_shared_from_this<Market> {
             this->op_execute_helper();
 
         }
+
+        //  API 
+        //  All of these methods lock on Market::api_mtx
 
         
         // Run for the specified number of iterations, or run indefinitely (until stop 
@@ -359,7 +359,8 @@ class Market : public std::enable_shared_from_this<Market> {
 
         /* 
         */
-        agentid_t add_agent(std::unique_ptr<Agent>);
+        agentid_t 
+        add_agent(std::unique_ptr<Agent>);
 
         /* 
             std::nullopt argument => delete all 
