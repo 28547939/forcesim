@@ -1,11 +1,11 @@
 
 
-#include "../types.h"
-#include "../Agent.h"
 #include "../ts.h"
 #include "../json_conversion.h"
 
 #include "../Market.h"
+
+#include "common.h"
 
 #include <iostream>
 #include <optional>
@@ -17,27 +17,6 @@
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
-
-void print_agentaction(price_t p, AgentAction a) {
-	std::cout 
-		<< "price=" << std::to_string(static_cast<double>(p))
-		<< " direction=" 
-		<< (a.direction == Direction::UP ? "UP" : "DOWN")
-		<< " internal_force=" << std::to_string(a.internal_force)
-		<< "\n"
-	;
-}
-
-void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
-    auto pts = a->compute_distribution_points(p);
-
-    std::ostringstream s;
-    for (auto x = std::get<0>(pts).begin(), y = std::get<1>(pts).begin(); x != std::get<0>(pts).end(); ++x, ++y) {
-        s << "(" + std::to_string(*x) +", "+ std::to_string(*y) +")\n";
-    }
-
-    std::cout << s.str();
-}
 
 
 // create a 'dummy' AgentRecord object to allow us to call Market::do_evaluate
@@ -69,7 +48,15 @@ int main(int argc, char* argv[]) {
 
     po::options_description desc("Options");
     desc.add_options()
-        ("count", po::value<int>()->default_value(10), "")
+        ("agent-config-path", po::value<std::string>(), "")
+        ("agent-config-key", po::value<std::string>(), "")
+
+        ("info-config-path", po::value<std::string>(), "")
+        ("info-config-key", po::value<std::string>(), "")
+
+        ("iteration-count", po::value<int>()->default_value(10), 
+            "Execute the agent over how many iterations"
+        )
     ;
 
     po::variables_map vm;
@@ -89,17 +76,25 @@ int main(int argc, char* argv[]) {
 
 
 
-
+/*  No longer manually specifying
 	auto info = std::shared_ptr<Info::Info<Info::Types::Subjective>>(
 		new Info::Info<Info::Types::Subjective>()
 	);
 
-
-	info->subjectivity_extent = 0.9;
-	info->price_indication = 100;
+	info->subjectivity_extent = vm["s"].as<float>();
+	info->price_indication = price_t(vm["p"].as<double>());
 	info->is_relative = false;
+    */
 
-    Info::infoset_t infoset = { std::static_pointer_cast<Info::Abstract>(info) };
+    std::shared_ptr<Info::Abstract> info = info_from_file(
+        vm["info-config-path"].as<std::string>(),
+        vm["info-config-key"].as<std::string>()
+    );
+
+    // cast only needed when we construct the derived type manually
+    //Info::infoset_t infoset = { std::static_pointer_cast<Info::Abstract>(info) };
+
+    Info::infoset_t infoset = { info };
 
 
     std::shared_ptr<Market::Market> market(new Market::Market());
@@ -109,13 +104,13 @@ int main(int argc, char* argv[]) {
 		//std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view_ret;
 
 
+/*
 		float external_force = 1;
 		int schedule_every = 1;
 		double initial_variance = 0.1;
 		double variance_multiplier = 1;
 		double force_threshold = 10;
-
-		while (auto x = 1) { break; }
+*/
 
             /*
 		auto a = std::shared_ptr<ModeledCohortAgent_v1>(
@@ -129,6 +124,17 @@ int main(int argc, char* argv[]) {
 			})
 		);
             */
+        
+
+        
+        auto agent = agent_from_file(
+            vm["agent-config-path"].as<std::string>(),
+            vm["agent-config-key"].as<std::string>()
+        );
+
+        std::shared_ptr<ModeledCohortAgent_v2> agent_ptr(&agent);
+
+        /*
 
 		auto a = std::shared_ptr<ModeledCohortAgent_v2>(
 			new ModeledCohortAgent_v2(json {
@@ -138,14 +144,15 @@ int main(int argc, char* argv[]) {
 				{ "variance_multiplier", variance_multiplier },
 				{ "force_threshold", force_threshold },
                 { "distribution_parameters", json::array({
-                    0, 0.1, 0.1, 1, 0.1, 0.5, 0.01, 0
-                    /*
-                    e_0 i_0 r_0 r_1 r_2 i_1 i_2 e_1
-                    */
+                    0,  0.1,    0.1,    1,  0.1,    0.5,    0.01,   0
+                    
+                //  e_0 i_0     r_0     r_1 r_2     i_1     i_2     e_1
                 })}
             })
         );
+        */
 
+        // no longer needed
         //auto record = get_agentrecord(std::move(a));
 
 		price_t price = 1;
@@ -157,9 +164,8 @@ int main(int argc, char* argv[]) {
             // use when there are multiple agent instances being tested
             price_t existing_price = price;
 
-
-			auto [new_price, act] = market->test_evaluate(a, existing_price, price, infoset_opt);
-            print_distribution(a, price);
+			auto [new_price, act] = market->test_evaluate(agent_ptr, existing_price, price, infoset_opt);
+            print_distribution(agent_ptr, price);
 
             infoset_opt.reset();
 

@@ -16,6 +16,10 @@ std::mt19937 engine (r());
 
 std::bernoulli_distribution tf(0.5);
 
+
+// TODO - additional functionality/coverage and CLI arguments
+
+
 // testing the 'ts' class and the associated 'view' and  'sparse_view' classes (ts.h)
 // work in progress
 
@@ -55,7 +59,8 @@ int max_ts_size = 1000;
 int ts_size = rand(max_ts_size);
 timepoint_t ts_first_tp = 0;
 
-typedef std::pair<ts<ts_val>, ts<ts_val>> tspair;
+typedef std::pair<ts<ts_val>, ts<ts_val>> 
+tspair;
 
 // track the elements which are 'marked' in the two TSs for verification
 // if true, a value was added, if false, the entry is empty (nullopt)

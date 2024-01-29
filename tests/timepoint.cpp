@@ -5,20 +5,13 @@
 #include <iostream>
 #include <optional>
 
-struct A {};
-
-struct AR {
-	const std::unique_ptr<A> a;
-};
-
-
 int main(int argc, char* argv[]) {
-
-	std::pair<int, AR> p(0,  { {} });
 
 	timepoint_t x;
 	timepoint_t y;
 	x++;
+
+	// TODO - test the entire timepoint_t interface
 
 	x += 5;
 
