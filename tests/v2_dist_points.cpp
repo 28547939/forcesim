@@ -5,6 +5,8 @@
 #include "../ts.h"
 #include "../json_conversion.h"
 
+#include "common.h"
+
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -21,40 +23,6 @@ using json = nlohmann::json;
 // the agent and output the results of compute_distribution_points, including trace data,
 // providing the agent with a current price and price view
 
-void print_agentaction(price_t p, AgentAction a) {
-	std::cout 
-		<< "price=" << std::to_string(static_cast<double>(p))
-		<< " direction=" 
-		<< (a.direction == Direction::UP ? "UP" : "DOWN")
-		<< " internal_force=" << std::to_string(a.internal_force)
-		<< "\n"
-	;
-}
-
-void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
-    auto pts = a->compute_distribution_points(p);
-
-    std::ostringstream s;
-    for (auto x = std::get<0>(pts).begin(), y = std::get<1>(pts).begin(); 
-            x != std::get<0>(pts).end(); ++x, ++y) 
-    {
-        s << "(" + std::to_string(*x) +", "+ std::to_string(*y) +")\n";
-    }
-
-    std::cout << s.str();
-}
-
-ModeledCohortAgent_v2 agent_from_file(std::string path, std::string agent_key) {
-    std::ifstream f(path, std::ios::binary);
-    json agent_config_list_json;
-    f >> agent_config_list_json;
-
-    json agent_config_json = agent_config_list_json[agent_key];
-
-    AgentConfig<AgentType::ModeledCohort_v2> agent_config(agent_config_json);
-    return ModeledCohortAgent_v2(agent_config);
-}
-
 
 
 namespace po = boost::program_options;
@@ -64,11 +32,11 @@ int main(int argc, char* argv[]) {
 
     po::options_description desc("Options");
     desc.add_options()
-        ("agent-config-path", po::value<std::string>(), "")
-        ("agent-config-key", po::value<std::string>(), "")
-        ("price-view", po::value<double>(), "")
-        ("current-price", po::value<double>(), "")
-        ("subjectivity-extent", po::value<float>(), "")
+        ("agent-config-path", po::value<std::string>()->required(), "")
+        ("agent-config-key", po::value<std::string>()->required(), "")
+        ("price-view", po::value<double>()->required(), "")
+        ("current-price", po::value<double>()->required(), "")
+        ("subjectivity-extent", po::value<float>()->required(), "")
     ;
     
     json agent_config;
@@ -121,5 +89,13 @@ int main(int argc, char* argv[]) {
     } catch (po::error& e) {
         std::cerr << "ERROR: " << e.what() << "\n";
         return 1;
+    } catch (boost::bad_any_cast& e) {
+        std::cerr << "required option missing: " << e.what() << "\n";
+        return 1;
     }
+    /* program_options doesn't seem to work properly in this regard
+    } catch (po::required_option& e) {
+        std::cerr << e.what() <<  "\n";
+        return 1;
+        */
 }
