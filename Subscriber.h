@@ -20,6 +20,19 @@
 #include <memory>
 
 
+/*
+Subscribers operate as follows:
+- Pull timeseries data out of the Market instance: 
+    - Base_subscriber::update on each subscriber instance, which is called by Subscribers::update,
+        retrieves a ts::view or ts::sparse_view from one of the Market "iterator" methods
+    - Data ("records", one record for each point in time) is placed in a container for conversion 
+        by another thread
+- Convert the data to JSON and send: 
+    - Base_subscriber::convert_chunk converts a certain number of records
+        - Called by a separate thread - Subscribers::launch_manager_thread    
+    - Send to the Endpoint(s) configured for that subscriber
+
+*/
 
 namespace Subscriber {
 
@@ -28,12 +41,6 @@ using timepoint_t = timepoint_t;
 
 using boostudp = boost::asio::ip::udp;
 namespace ba = boost::asio;
-
-// TODO misc - include a description here
-// 'record' refers to an entry in a ts
-// a subscriber class (inheriting from Base_subscriber) is one of the permissible types
-// of subscriber (PRICE, AGENT_ACTION, possibly others eventually), corresponding to 
-// record types of price_t, AgentAction respectively 
 
 // subscriber ID
 typedef numeric_id<subscriber_numeric_id_tag> id_t;
@@ -497,6 +504,7 @@ class Base_subscriber : public AbstractSubscriber {
         }
         // otherwise move the pending records to the output map
         // TODO use map::extract
+        //  or, alternatively, use a queue of pairs instead of a map
         else {
             std::move(begin, end, 
                 std::insert_iterator<std::map<timepoint_t, const RecordType>>(output, output.end()));
