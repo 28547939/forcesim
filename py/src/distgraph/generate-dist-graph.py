@@ -1,11 +1,9 @@
-import pandas
 import matplotlib
 
 from datetime import date
 
 import matplotlib.pyplot as plt
 import matplotlib.table as mpl_tbl
-#import numpy as np
 
 from typing import List
 import argparse
@@ -16,7 +14,8 @@ import json
         
 """
 Using the distribution computation function present in the forcesim code (via the v2-dist-points
-client program), graph and describe the graph of the piecewise-linear distribution PDF
+client program), graph and describe the graph of the piecewise-linear distribution PDF used
+by the ModeledCohort_v2 agent
 """
 
 
@@ -104,7 +103,7 @@ def render_from_points(xs, ys, meta, output_file):
     collision_threshold = 0.01
     collision_level = 0
 
-    # need second pass to have accurate x-limits
+    # need second pass, here, to have accurate x-limits
     for i in range(0, len(xs)):
         y_offset=5
         x_offset=-5

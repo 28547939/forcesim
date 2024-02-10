@@ -1,5 +1,6 @@
 
-output_dir: '/home/market-force-sim/forcesim/py/tests/basic/output'
+# absolute path to directory where graph images and subscriber JSON data is stored
+output_dir: ''
 
 iter_block_size: 100
 
@@ -9,10 +10,6 @@ agents:
     '2023-11-19_2': 40
     '2023-11-19_3': 20
     '2023-11-19_4': 10
-    #'2023-11-15': 20
-    #agent1: 2
-    #agent2: 2
-    #agent3: 10
 
 subscribers:
     s1:
@@ -25,7 +22,8 @@ subscribers:
 # 
 # info_sequence also implicitly indicates the total number of iter_blocks. after all items
 # in info_sequence have been emitted, we stop. 
-# elements of info_sequence can be empty if desired
+# elements of info_sequence can be empty lists if desired, indicating no info object to be
+#	emitted between those iter blocks
 
 info_sequence:
     - [ 's=0.75' ]

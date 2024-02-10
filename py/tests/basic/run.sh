@@ -1,6 +1,7 @@
 #!/bin/sh
 
-export PYTHONPATH=../../src
+# useful for development
+export PYTHONPATH=$PYTHONPATH:../../src
 
 ./basic.py  --agents-json-dir=./agents-json \
 	--subscribers-json-dir=./subscribers-json \

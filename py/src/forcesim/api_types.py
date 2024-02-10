@@ -1,9 +1,5 @@
-#!/usr/local/bin/python3.9
-
 from datetime import date
 from typing import List, Tuple, Any, Optional, Dict
-
-import numpy
 
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
@@ -178,7 +174,8 @@ class Info():
 @dataclass(frozen=True)
 class SubjectiveInfo(Info):
 	subjectivity_extent: float
-	price_indication: numpy.float128
+    # TODO possibly use numpy.float128 - not worth adding the dependency for now
+	price_indication: float
 	is_relative: bool
 
 
