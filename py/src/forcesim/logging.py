@@ -1,5 +1,3 @@
-#!/usr/local/bin/python3.9
-
 import logging
 from typing import List, Optional
 

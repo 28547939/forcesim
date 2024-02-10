@@ -1,8 +1,5 @@
 #!/usr/local/bin/python3.9
 
-import pdb
-
-import pandas
 import matplotlib
 
 import itertools
@@ -29,20 +26,10 @@ from api_types import *
 from classes import *
 
 
+# TODO deprecated for now - use tests/basic/basic.py
 
 
 async def control_task(i : Interface, s : Subscriber):
-
-    #a1 = Agent(i, agentclass_t.TrivialAgent, 
-    #    external_force=0.01, schedule_every=1, direction='UP', internal_force=0.01
-    #)
-
-    #a2 = Agent(i, agentclass_t.BasicNormalDistAgent, 
-    #    external_force=0.01, schedule_every=1, 
-    #)
-
-    # TODO delete all agents, all subscribers, so that we can start over
-    # might be good to add a 'reset' method to reset the timepoint and price
 
     agents = []
     N = 200

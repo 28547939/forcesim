@@ -1,13 +1,6 @@
-#!/usr/local/bin/python3.9
-
-import pdb
-
-
 import itertools
 
 from datetime import datetime
-
-import requests
 
 from typing import List, Tuple, Any, Optional, Dict
 
