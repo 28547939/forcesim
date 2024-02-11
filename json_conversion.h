@@ -8,10 +8,8 @@
 #include "Agent.h"
 #include "Market.h"
 
-#include <boost/asio.hpp>
 
 using json = nlohmann::json;
-namespace ba = boost::asio;
 
 
 /*
