@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forcesim"
+version = "0.0.1"
+authors = [
+]
+description = "forcesim"
+requires-python = ">=3.9"
+classifiers = [
+]
+dependencies = [
+	"aiohttp",
+	"pyyaml",
+	"matplotlib"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/28547939/forcesim"

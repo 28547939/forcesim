@@ -19,7 +19,11 @@ set ( forcesim_SRCS
 	Agent.cpp
 )
 
-link_libraries ( -lglog -lboost_program_options -L${INCLUDE_PREFIX}/lib )
+add_subdirectory(
+	${VENDOR}/glog
+)
+
+link_libraries ( glog::glog -lboost_program_options -L${INCLUDE_PREFIX}/lib )
 
 add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
 add_executable ( test-interface ${forcesim_SRCS} tests/interface.cpp )
