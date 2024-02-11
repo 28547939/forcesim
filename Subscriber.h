@@ -10,7 +10,7 @@
 #include <glog/logging.h>
 #include <nlohmann/json.hpp>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 
 
 #include <chrono>
@@ -39,8 +39,7 @@ namespace Subscriber {
 using agentid_t = Market::agentid_t;
 using timepoint_t = timepoint_t;
 
-using boostudp = boost::asio::ip::udp;
-namespace ba = boost::asio;
+using asioudp = asio::ip::udp;
 
 // subscriber ID
 typedef numeric_id<subscriber_numeric_id_tag> id_t;
@@ -72,7 +71,7 @@ std::string record_type_t_str(const record_type_t&);
 // *************************
 
 struct EndpointConfig {
-    ba::ip::address remote_addr;
+    asio::ip::address remote_addr;
     int remote_port;
 
     bool operator==(const EndpointConfig& e) const {
@@ -99,8 +98,8 @@ inline std::ostream& operator<<(std::ostream& os, const EndpointConfig& c) {
 
 struct Endpoint {
     protected:
-    std::shared_ptr<boostudp::socket> socket;
-    boostudp::endpoint endpoint;
+    std::shared_ptr<asioudp::socket> socket;
+    asioudp::endpoint endpoint;
 
     public:
     EndpointConfig config;
@@ -850,7 +849,7 @@ void to_json(json& j, const record_type_t t);
 
 /*
 namespace ::boost::asio::ip {
-    void from_json(const json& j, ba::ip::address& addr);
+    void from_json(const json& j, asio::ip::address& addr);
 };
 */
 

@@ -7,6 +7,7 @@
 #include <stack>
 #include <queue>
 #include <optional>
+#include <variant>
 #include <chrono>
 
 #include "Info.h"
@@ -197,7 +198,8 @@ class Market : public std::enable_shared_from_this<Market> {
 
         Market() :
             state(state_t::STOPPED),
-            current_price(INITIAL_PRICE)
+            current_price(INITIAL_PRICE),
+            start_sem(0)
         {
             this->price_history = std::unique_ptr<ts<price_t>> {
                 new ts<price_t>(this->timept)

@@ -21,8 +21,7 @@
 #include "Subscriber.h"
 
 
-using boostudp = boost::asio::ip::udp;
-namespace ba = boost::asio;
+using asioudp = asio::ip::udp;
 
 
 
@@ -67,9 +66,9 @@ void from_json(const json& j, record_type_t& t) {
 
 /*
 namespace boost::asio::ip {
-void from_json(const json& j, ba::ip::address& addr) {
+void from_json(const json& j, asio::ip::address& addr) {
     std::string addr_str = j.get<std::string>();
-    addr = ba::ip::make_address(addr_str);
+    addr = asio::ip::make_address(addr_str);
 }
 };
 */
@@ -83,7 +82,7 @@ void from_json(const json& j, Config& c) {
 
 void from_json(const json& j, EndpointConfig& c) {
     std::string addr_str = j.at("remote_addr").get<std::string>();
-    c.remote_addr = ba::ip::make_address(addr_str);
+    c.remote_addr = asio::ip::make_address(addr_str);
     j.at("remote_port").get_to(c.remote_port);
 }
 
@@ -130,17 +129,17 @@ Endpoints::endpoints;
 
 
 Endpoint::Endpoint(EndpointConfig c) : config(c) {
-    ba::io_context io_context;
-    this->endpoint = boostudp::endpoint(c.remote_addr, c.remote_port);
-    this->socket = std::shared_ptr<boostudp::socket>(
-        new boostudp::socket(io_context)
+    asio::io_context io_context;
+    this->endpoint = asioudp::endpoint(c.remote_addr, c.remote_port);
+    this->socket = std::shared_ptr<asioudp::socket>(
+        new asioudp::socket(io_context)
     );
-    socket->open(boostudp::v4());
+   socket->open(asioudp::v4());
 }
 
 void Endpoint::emit(std::unique_ptr<json> j) {
     std::string s(j->dump());
-    socket->send_to(ba::const_buffer(s.c_str(), s.size()), this->endpoint);
+    socket->send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
 }
 
 uintmax_t Subscribers::update(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {

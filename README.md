@@ -6,7 +6,7 @@
  * Google's `glog` logging library
  * `crow` HTTP server (https://github.com/CrowCpp/Crow)
  * `json` from (https://github.com/nlohmann/json)
- * `boost::program_options`, `boost::random`, and `google::glog`, as shared libraries
+ * `boost`: `program_options` and `asio` as shared libraries
 * Python
  * Python >= 3.9
  * `pyyaml`, `matplotlib`, `aiohttp`
