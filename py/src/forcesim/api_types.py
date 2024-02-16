@@ -4,7 +4,13 @@ from typing import List, Tuple, Any, Optional, Dict
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
 
-class error_code_t(Enum):
+class MyEnum(Enum):
+    def __str__(self):
+        return self.name
+    def __json__(self):
+        return json.dumps(self.name)
+
+class error_code_t(MyEnum):
     Already_started = auto()
     General_error = auto()
     Json_parse_error = auto()
@@ -15,17 +21,11 @@ class error_code_t(Enum):
     Agent_config_error = auto()
     Subscriber_config_error = auto()
 
-    def __str__(self):
-        return self.name
-
-class response_type_t(Enum):
+class response_type_t(MyEnum):
     Data = auto()
     Multiple_stringmap = auto()
     Multiple_pairlist = auto()
     Multiple_barelist = auto()
-
-    def __str__(self):
-        return self.name
 
     def is_multiple(self):
         return self.value in [
@@ -35,37 +35,18 @@ class response_type_t(Enum):
         ]
 
 
-class agentclass_t(Enum):
+class agentclass_t(MyEnum):
     TrivialAgent = auto()
     ModeledCohortAgent_v1 = auto()
     BasicNormalDistAgent = auto()
     ModeledCohortAgent_v2 = auto()
 
-    def __str__(self):
-        return self.name
-    def __json__(self):
-        return json.dumps(self.name)
-
-
-class infotype_t(Enum):
+class infotype_t(MyEnum):
     Subjective = auto()
 
-    def __str__(self):
-        return self.name
-    def __json__(self):
-        return json.dumps(self.name)
-
-
-class subscriber_type_t(Enum):
+class subscriber_type_t(MyEnum):
     AGENT_ACTION = auto()
     PRICE = auto()
-
-    def __str__(self):
-        return self.name
-
-    def __json__(self):
-        return json.dumps(self.name)
-
 
 
 def str_to_agentclass(s : str) -> agentclass_t:
