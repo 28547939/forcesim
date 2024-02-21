@@ -18,8 +18,8 @@
 1. In the project root, adjust `cmake.sh` based on your system as needed.
 Set the following environment variables if needed:
 
- * `INCLUDE_PREFIX`: `/usr` on Linux (defaults to `/usr/local`)
- * `VENDOR`: path to the the C++ dependency directory: we will have, for example,
+   * `INCLUDE_PREFIX`: `/usr` on Linux (defaults to `/usr/local`)
+   * `VENDOR`: path to the the C++ dependency directory: we will have, for example,
 `$VENDOR/Crow/include`
 
 2. Clone the `crow`, `json` and `glog` repositories into the dependency directory
