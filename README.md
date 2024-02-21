@@ -2,15 +2,15 @@
 
 ### Dependencies/requirements
 
-* C++
- * Google's `glog` logging library (https://github.com/google/glog/)
- * `crow` HTTP server (https://github.com/CrowCpp/Crow)
- * `json` from (https://github.com/nlohmann/json)
- * `boost::program_options` shared library
- * `asio` shared library
+* C++ (likely C++20 or C++17)
+  * Google's `glog` logging library (https://github.com/google/glog/)
+  * `crow` HTTP server (https://github.com/CrowCpp/Crow)
+  * `json` from (https://github.com/nlohmann/json)
+  * `boost::program_options` shared library
+  * `asio` shared library
 * Python
- * Python >= 3.9
- * `pyyaml`, `matplotlib`, `aiohttp`
+  * Python >= 3.9
+  * `pyyaml`, `matplotlib`, `aiohttp`
 
 ### Building
 
