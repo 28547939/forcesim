@@ -27,16 +27,22 @@ annotation at current price, price view
 """
 
 
-def render_from_points(xs, ys, meta, output_file):
+def render_from_points(xs, ys, meta, output_file, include_points_table=True):
     (segment_labels, ylabels, segment_values)=meta
 
-    fig, (table_ax, graph_ax)=plt.subplots(2, 1)
-    table_ax.axis('off')
-    table_ax.axis('tight')
+    if include_points_table:
+        fig, (table_ax, graph_ax)=plt.subplots(2, 1)
+        table_ax.axis('off')
+        table_ax.axis('tight')
     #fig.set_constrained_layout(True)
 
-    table_ax.xaxis.set_visible(False)
-    table_ax.yaxis.set_visible(False)
+        table_ax.xaxis.set_visible(False)
+        table_ax.yaxis.set_visible(False)
+    else:
+
+        fig, graph_ax=plt.subplots()
+        (w, h)=fig.get_size_inches()
+        fig.set_size_inches( (w, h/2) )
 
     colors=['red', 'blue']
 
@@ -68,24 +74,25 @@ def render_from_points(xs, ys, meta, output_file):
         return x
 
 
-    tbl=mpl_tbl.table(table_ax, 
-        loc=mpl_tbl.Table.codes['upper center'],
-        cellText=list(zip(do_round(xs, ys), segment_labels, do_round(segment_values))),
-        rowLabels=range(0, len(xs)),
-        colLabels=[ 
-            'coordinates', 
-            'next segment (${\Delta}x$) definition', 
-            'next segment value' 
-        ],
-        colWidths=[ 0.3, 0.4, 0.3 ],
-        edges='horizontal',
-        fontsize=14
-    )
+    if include_points_table:
+        tbl=mpl_tbl.table(table_ax, 
+            loc=mpl_tbl.Table.codes['upper center'],
+            cellText=list(zip(do_round(xs, ys), segment_labels, do_round(segment_values))),
+            rowLabels=range(0, len(xs)),
+            colLabels=[ 
+                'coordinates', 
+                'next segment (${\Delta}x$) definition', 
+                'next segment value' 
+            ],
+            colWidths=[ 0.3, 0.4, 0.3 ],
+            edges='horizontal',
+            fontsize=14
+        )
 
-    tbl.auto_set_font_size(False)
-    for ((row, col), cell) in tbl.get_celld().items():
-        if (col == 1 or col == 2):
-            cell.set_text_props(usetex=True)
+        tbl.auto_set_font_size(False)
+        for ((row, col), cell) in tbl.get_celld().items():
+            if (col == 1 or col == 2):
+                cell.set_text_props(usetex=True)
 
     #graph_plt=fig.add_subplot()
     
@@ -171,6 +178,7 @@ def main():
     )
     prs.add_argument('--distgraph-output-file', default='distgraph.png')
     prs.add_argument('--parameters-output-file', default='parameters.png')
+    prs.add_argument('--no-points-table', default=False, action='store_true')
     args=vars(prs.parse_args())
     (xs, ys, meta, parameters)=json.load(sys.stdin)
 
@@ -179,7 +187,7 @@ def main():
 
     print(meta)
 
-    render_from_points(xs, ys, meta, args['distgraph_output_file'])
+    render_from_points(xs, ys, meta, args['distgraph_output_file'], not args['no_points_table'])
     render_parameters_table(parameters, args['parameters_output_file'])
     
 
