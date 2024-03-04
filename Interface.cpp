@@ -39,10 +39,11 @@ namespace {
             [](json y) {
                 auto agent_ptr = new Agent_impl<T>(AgentConfig<T>(y));
 
-                // otherwise we have an "ambiguous derived -> base cast" error 
-                // in the case of ModeledCohortAgent_v2 (or any other agent type
-                // which inherits from another agent type)
+                // this can be used to avoid errors with multiple inheritance in the case of an agent
+                // class inheriting from other agent class, if virtual inheritance is not used
+                // but this will create its own problems
                 //auto agent_ptr_base = dynamic_cast<Agent_base<T>*>(agent_ptr);
+
                 auto agent_ptr_base = dynamic_cast<Agent*>(agent_ptr);
 
                 return unique_ptr<Agent>(agent_ptr_base);
@@ -55,35 +56,11 @@ namespace {
         agent_factory_generator<AgentType::BasicNormalDist>(),
         agent_factory_generator<AgentType::ModeledCohort_v1>(),
         agent_factory_generator<AgentType::ModeledCohort_v2>()
-        /*
+        /* each invocation of agent_factory_generator produces something like the following:
         { "TrivialAgent", 
             [](json y) {
                 return unique_ptr<Agent>(
                     new TrivialAgent (AgentConfig<AgentType::Trivial>(y))
-                );
-            }
-        },
-
-        { "BasicNormalDistAgent", 
-            [](json y) {
-                return unique_ptr<Agent>(
-                    new BasicNormalDistAgent (AgentConfig<AgentType::BasicNormalDist>(y))
-                );
-            }
-        },
-
-        { "ModeledCohortAgent_v1", 
-            [](json y) {
-                return unique_ptr<Agent>(
-                    new ModeledCohortAgent_v1 (AgentConfig<AgentType::ModeledCohort_v1>(y))
-                );
-            }
-        },
-
-        { "ModeledCohortAgent_v2", 
-            [](json y) {
-                return unique_ptr<Agent>(
-                    new ModeledCohortAgent_v2 (AgentConfig<AgentType::ModeledCohort_v2>(y))
                 );
             }
         },
@@ -215,14 +192,24 @@ void Interface::handle_json_wrapper(
 
     auto jreq = jreq_opt.value();
 
-    f(req, res, jreq);
+    try {
+        f(req, res, jreq);
+    } catch (json::type_error& e) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_type_error, 
+            std::string("json::type_error caught: may indicate that client is passing JSON as string;")
+            + std::string("error: ") + e.what(),
+            {}, 
+            std::nullopt,
+            400);
+    }
+
 }
 
 std::optional<std::deque<json>>
 Interface::handle_json_array(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
-    // TODO possibly use wrapper with template return
     auto jreq_opt = interface->handle_json(req, res);
     if (!jreq_opt.has_value()) {
         return std::nullopt;
@@ -254,7 +241,19 @@ void Interface::handle_json_array_wrapper(
 
     auto jreq = jreq_opt.value();
 
-    f(req, res, jreq);
+    // TODO shared boilerplate with handle_json_wrapper
+    try  {
+        f(req, res, jreq);
+    } catch (json::type_error& e) {
+        res = interface->build_json_crow(
+            InterfaceErrorCode::Json_type_error, 
+            std::string("json::type_error caught: may indicate that client is passing JSON as string;")
+            + std::string("error: ") + e.what(),
+            {}, 
+            std::nullopt,
+            400);
+    }
+
 }
 
 template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
@@ -391,26 +390,10 @@ void Interface::crow__market_wait_for_stop(const crow::request& req, crow::respo
         try {
             uintmax_t tmp = jreq["timepoint"];
             tp = timepoint_t(tmp);
-        } catch (json::out_of_range& e) {
-            /*
-            res = interface->build_json_crow(
-                InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
-            );
-            res.end();
-            return;
-            */
-        }
+        } catch (json::out_of_range& e) {}
         // it appears that type_error is thrown if the request body is empty (null) - the
         // library interprets this as the 'timepoint' field being null
-        catch (json::type_error& e) {
-            /*
-            res = interface->build_json_crow(
-                InterfaceErrorCode::Json_type_error, "timepoint field absent", {}
-            );
-            res.end();
-            return;
-            */
-        }
+        catch (json::type_error& e) {}
 
         std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
 
@@ -863,8 +846,6 @@ void Interface::crow__reset_market_perf_data(const crow::request& req, crow::res
 
 }
 
-//void crow_handler(std::function )
-
 Interface::Interface(std::shared_ptr<Market::Market> m) :
     market(m)
 {
@@ -925,10 +906,10 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
 
 }
 
-bool Interface::start(std::optional<boost::asio::ip::address> listen_addr, int port) {
+bool Interface::start(std::optional<asio::ip::address> listen_addr, int port) {
     try {
         if (!listen_addr.has_value()) {
-            listen_addr = boost::asio::ip::address::from_string("0.0.0.0");
+            listen_addr = asio::ip::address::from_string("0.0.0.0");
         }
         this->crow_app.bindaddr(listen_addr->to_string()).port(port).multithreaded().run();
         return true;
