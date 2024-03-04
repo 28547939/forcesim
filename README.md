@@ -2,7 +2,7 @@
 
 ### Dependencies/requirements
 
-* C++ (likely C++20 or C++17)
+* C++ (C++20)
   * Google's `glog` logging library (https://github.com/google/glog/)
   * `crow` HTTP server (https://github.com/CrowCpp/Crow)
   * `json` from (https://github.com/nlohmann/json)
