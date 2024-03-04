@@ -7,69 +7,7 @@
 #include <iostream>
 #include <memory>
 
-/*
-                {
-
-                    // remains without a value until the first Info item exists, ie, when
-                    // Market::emit_info is called for the first time
-                    if (this->agent_info_cursor.has_value()) {
-                        auto info_cursor = this->agent_info_cursor.value();
-
-                        // calculate Market::agent_info_cursor, which is the greatest lower bound across
-                        // the agents' latest read entry in Market::info_history
-                        for (auto& agent_record : this->agents) {
-
-                            if (agent_record.info_cursor.has_value()) {
-
-                            } 
-                            
-                            else {
-                                if () 
-                            }
-
-
-
-                            if (agent_record.info_cursor < ) {
-                                info_cursor = agent_record.info_cursor;
-                            }
-                        }
-
-                        VLOG(8) << "global_agent_info_cursor updated to " << info_cursor;
-                        this->agent_info_cursor = info_cursor;
-
-                    }
-
-                }
-
-
-
-
-
-        if (this->_info_cursor.has_value()) {
-            // truncate earlier entries from the info timeseries that we have already read
-            try {
-                this->info_view->seek_to(this->_info_cursor)
-            } catch (std::out_of_range& e) {
-                throw std::out_of_range("agent cursor is behind earliest info_history entry");
-            }
-
-        // initialize our cursor the first time 
-        } else {
-            this->_info_cursor = info_view->cursor();
-        }
-
-        */
-
-
-
-
 namespace Market {
-
-/*
-std::ostream& operator<<(std::ostream& os, const timepoint_t& tp) {
-    return os << std::to_string(tp.to_numeric());
-}
-*/
 
 Market::~Market() {}
 
@@ -81,7 +19,6 @@ Market::do_evaluate(
     price_t p_current,
     std::optional<info_view_t> info_view
 ) {
-    // TODO info_view unique_ptr or optional
     auto [act, info_view_ret] = agent.agent->evaluate(p_existing, std::move(info_view));
 
     // if the agent experiences a failure (produces an exception)
@@ -101,9 +38,6 @@ Market::do_evaluate(
 
     return { act, p_new, std::move(info_view_ret) };
 }
-
-//Market::subscribers
-
 
 /*
     The main loop is single-threaded
@@ -153,18 +87,15 @@ void Market::main_loop() {
                 const auto p1s = std::chrono::steady_clock::now();
 
 
-// TODO 
-/*
-info_view can be nullopt, but info_history should never be uninitialized
-
-*/
-
                 // info_view: ts::view object to convey Info objects to Agents 
                 // Possible values
                 // if Market::info_history is empty (i.e. no Info objects ever emitted, or the history
-                //      has been deleted), this is a std::nullopt
+                //      has been deleted), or if an error occurred in info_iterator, this is a std::nullopt
+                //
                 // if global_agent_info_cursor is nullopt, info_view will begin at the beginning of
-                //      info_history
+                //      info_history.
+                //
+                // ts<Info::infoset_t>::sparse_view
                 auto info_view = this->info_iterator(this->global_agent_info_cursor);
 
                 const auto p1f = std::chrono::steady_clock::now();
@@ -259,11 +190,11 @@ info_view can be nullopt, but info_history should never be uninitialized
                     // info_view will be nullopt if info_history ONLY has empty entries
                     // (the ts::sparse_view can't be created if the underlying ts (info_history)
                     //  has only empty entries)
+                    // 
+                    // if it's not nullopt, check if agent's have read any info, and if so, 
+                    // adjust global_agent_info_cursor to allow us to skip those entries that
+                    // have been read by all agents
                     if (info_view.has_value()) {
-
-                        // TODO make sure you handle the situation where info_history is cleared
-                        // agents will have non-empty cursors
-
                         
                         std::optional<timepoint_t> new_cursor;
 
@@ -289,16 +220,15 @@ info_view can be nullopt, but info_history should never be uninitialized
                                 continue;
                             }
 
-                            // find the minimum among
+                            // find the minimum among agents' most recently read
                             if (agent_record.agent->info_cursor() < new_cursor) {
                                 new_cursor = agent_record.agent->info_cursor();
                             }
                         }
 
-                        // if none of the agents had a non-empty info_cursor, keep the 
-                        // TODO should not set it to the info_view bounds-  the info_view lower bound is
-                        // incremented before the iter block, to reflect an unread entry (check)
-
+                        // if none of the agents have a non-nullopt info_cursor, or all have
+                        // Ignore_info set, default to the earliest possible timepoint, which is the 
+                        // beginning of the info_view
                         auto new_cursor_v = new_cursor.value_or((*info_view)->bounds().first);
                         VLOG(8) << "global_agent_info_cursor updated to " << new_cursor_v;
                         this->global_agent_info_cursor = new_cursor;
@@ -314,6 +244,9 @@ info_view can be nullopt, but info_history should never be uninitialized
                         // if any agent cursors still point to deleted info entries (though they 
                         //  shouldn't, since there should be a wait mechanism to prevent this),
                         //  those cursors need to be reset anyway.
+
+                        // std::nullopt value indicates that future access to info_history will start
+                        // at its beginning
 
                         this->global_agent_info_cursor = std::nullopt;
                     }
@@ -408,22 +341,10 @@ info_view can be nullopt, but info_history should never be uninitialized
 }
 
 
-/* API */
-
-
-/*
-
-// TODO move this to the Factory class(es), likewise for del_subscribers
-std::map<Subscriber::id_t, bool>
-void Market::del_subscribers(std::vector<Subscriber::id_t> ids) {
-    auto ret = std::map<Subscriber::id_t, bool> {};
-    std::for_each(c.begin(), c.end(), [this](auto id) {
-        auto x = Subscriber::managed_subscribers.erase(id);
-        ret[id] = (x == 0 ? false : true);
-    });
-
-    return ret;
-}
+/******************************************
+ * 
+ *  API 
+ * All of these methods lock this->api_mtx
 */
 
 ts<AgentAction>::view 
@@ -445,6 +366,7 @@ Market::price_iterator(const timepoint_t& tp) {
     return ts<price_t>::view(*(this->price_history), tp);
 }
 
+// returns std::nullopt when info_history is empty or in case of error 
 std::optional<info_view_t>
 Market::info_iterator(const std::optional<timepoint_t>& tp) {
     std::lock_guard L(this->api_mtx);
@@ -466,12 +388,6 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
 }
 
 
-
-/******************************************
- * 
- *  API 
- * All of these methods lock this->api_mtx
-*/
 
 
 void 
@@ -594,8 +510,6 @@ Market::del_agents(std::optional<std::deque<agentid_t>> ids) {
             if (it == agents.end()) {
                 deleted[id] = false;
             } else {
-                // TODO wait on subscriber then delete
-
                 VLOG(7) << "waiting for subscribers associated with agent ID " << id.str();
                 Subscriber::Factory<AgentAction> f { {id} };
                 f.wait(this->timept);

@@ -1,7 +1,5 @@
 import itertools
 
-from datetime import datetime
-
 from typing import List, Tuple, Any, Optional, Dict
 
 from dataclasses import dataclass, asdict
@@ -350,9 +348,6 @@ class Interface():
         ret=self._ok_or_raise(ret)
         return ret
 
-    def get_price_history(self):
-        pass
-
     # second item of spec_list tuple is `count`: the number of agents specified by AgentSpec
     # to add; for each (spec, count) pair, a list of size `count` is returned 
     async def add_agents(self, spec_list : List[Tuple[AgentSpec, int]]): #-> List[List[AgentRecord]]:
@@ -391,14 +386,16 @@ class Interface():
         ret=await self._aio_json_req('/agent/delete', data=x)
         return self._ok_or_raise(ret)
 
+    # TODO - not yet useful
     def get_agent_history(self, x: AgentRecord):
-        pass
-
+        raise NotImplementedError()
     def delete_agent_history(self, x : AgentRecord):
-        pass
+        raise NotImplementedError()
 
+    # TODO - currently using subscribers to accomplish this
     def get_price_history(self):
-        pass
+        raise NotImplementedError()
+
 
     async def list_agents(self):
         ret=await self._aio_json_req('/agent/list', method='GET')

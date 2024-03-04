@@ -135,10 +135,7 @@ class timepoint_t {
         return this->tp % arg;
     }
 
-
-    // TODO operator-
-
-    //const _now now; TODO
+    // TODO operator- ; not currently needed, but reasonable to expect that it exists
 };
 
 inline std::ostream& operator<<(std::ostream& os, const timepoint_t& tp) {

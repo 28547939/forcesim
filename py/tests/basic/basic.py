@@ -2,17 +2,8 @@ import logging
 import argparse
 
 from datetime import datetime
-from datetime import date
-
-import requests
 
 import matplotlib.pyplot as plt
-
-from typing import List, Tuple, Any, Optional, Dict
-
-
-from dataclasses import dataclass, asdict
-from enum import Enum, auto
 
 import os 
 
@@ -87,8 +78,6 @@ async def main():
     log.info(f'setting iter_block={iter_block}')
     await interface.configure(iter_block=iter_block)
 
-    #if 'info_sequence' not in config:
-    #    raise Exception('`info_sequence` missing from config')
     info_sequence=config.info_sequence
 
     # ensure early on that we can write into the graph output directory
@@ -149,7 +138,6 @@ async def main():
             graph=Graph(output_path=os.path.join(
                 output_dir_path, name+'.png'
             ))
-            # TODO json output path
 
         if (sconfig.type == subscriber_type_t.AGENT_ACTION 
             and sconfig.parameter is None):
@@ -251,34 +239,11 @@ async def main():
 
 
 
-
-
-
-
 """
 2023-10-20 TODO
 subscription option in agent config -> coordinate here
+(for AGENT_ACTION subscribers - not yet implemented)
 """
-
-
-    #s_test = Subscriber(
-    #    i=interface,
-    #    sconfig=SubscriberConfig(type=subscriber_type_t.PRICE, granularity=1, port=5000, addr="127.0.0.1"),
-    #    graph=Graph()
-    #)
-
-    #await s_test.start()
-    #await asyncio.create_task(control_task(i, s_test))
-
-
-    #t_subscriber=asyncio.create_task(s_test.start())
-
-    #await asyncio.gather(
-    #    t_control,
-    #    #t_subscriber,
-    #)
-
-
 
 
 if __name__ == '__main__':

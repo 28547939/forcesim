@@ -1,10 +1,4 @@
-
-from datetime import date
-
-
 from typing import List, Tuple, Any, Optional, Dict
-
-
 
 import json
 import yaml
@@ -24,14 +18,7 @@ def load_config_yaml(filename) -> Config:
         return Config(**config)
 
 
-"""
-the following functions can throw json.JSONDecodeError
-
-in the case of Agent and Info objects, the configuration will differ depending on 
-the specific type of the Agent or Info. The proper constructor is selected using the 
-`type` 
-"""
-
+# trivial base type just to check membership in do_load_json_recursive
 class JsonLoader():
     pass
 
@@ -40,14 +27,17 @@ class JsonLoaders(Enum):
     Subscrbiers = auto()
     Info = auto()
 
-#loaders = {
-#    JsonLoaders
-#}
-
-
 logger = forcesim_logging.get_logger('util')
 
 
+
+"""
+the following functions can throw json.JSONDecodeError
+
+in the case of Agent and Info objects, the configuration will differ depending on 
+the specific type of the Agent or Info. The proper constructor is selected using the 
+`type` 
+"""
 
 
 

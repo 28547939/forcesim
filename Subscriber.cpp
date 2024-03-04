@@ -7,8 +7,6 @@
 
 #include "json_conversion.h"
 
-#include <boost/asio.hpp>
-
 #include <iostream>
 
 #include <chrono>

@@ -6,7 +6,7 @@
 #include <functional>
 #include <optional>
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 
 
 using json = nlohmann::json;
@@ -410,7 +410,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
         std::optional<int> http_code = std::nullopt
     );
 
-    bool start(std::optional<boost::asio::ip::address>, int);
+    bool start(std::optional<asio::ip::address>, int);
 
     constexpr static const float api_version = 0.1000;
 };

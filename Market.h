@@ -100,10 +100,10 @@ enum class state_t {
 
 
 
-// TODO
 struct Config {
     std::optional<uintmax_t> iter_block;
 
+// TODO - not yet implemented; may go with a different approach for these tasks (eg let client do it)
 /*
     std::optional<uintmax_t> agent_history_prune_age;
     std::optional<uintmax_t> price_history_prune_age;
@@ -368,11 +368,7 @@ class Market : public std::enable_shared_from_this<Market> {
             std::nullopt argument => delete all 
 
             return:
-                bool is false if a provided agentid_t could not be deleted (eg was not found)
-                    true otherwise
-                array contains the IDs of all those agents which were successfully deleted
-                TODO change 
-                
+                map each agentid_t to whether it was successfully deleted
         */
         std::map<agentid_t, bool>
         del_agents(std::optional<std::deque<agentid_t>> = std::nullopt);

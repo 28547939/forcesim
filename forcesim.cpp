@@ -12,7 +12,7 @@
 
 #include "json_conversion.h"
 
-#include <boost/asio.hpp>
+#include <asio.hpp>
 #include <boost/program_options.hpp>
 
 
@@ -85,7 +85,7 @@ int main (int argc, char* argv[]) {
         );
     });
 
-    boost::asio::ip::address listen_addr = boost::asio::ip::address::from_string(
+    asio::ip::address listen_addr = asio::ip::address::from_string(
         vm["interface-address"].as<std::string>()
     );
 

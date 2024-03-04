@@ -847,12 +847,6 @@ struct Factory : AbstractFactory
 //
 void to_json(json& j, const record_type_t t);
 
-/*
-namespace ::boost::asio::ip {
-    void from_json(const json& j, asio::ip::address& addr);
-};
-*/
-
 void from_json(const json&, Config&);
 
 void from_json(const json&, EndpointConfig&);

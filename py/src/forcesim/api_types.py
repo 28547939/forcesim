@@ -1,4 +1,3 @@
-from datetime import date
 from typing import List, Tuple, Any, Optional, Dict
 
 from dataclasses import dataclass, asdict
@@ -7,8 +6,9 @@ from enum import Enum, auto
 class MyEnum(Enum):
     def __str__(self):
         return self.name
-    def __json__(self):
-        return json.dumps(self.name)
+    # currently unused
+    #def __json__(self):
+    #    return json.dumps(self.name)
 
 class error_code_t(MyEnum):
     Already_started = auto()

@@ -144,7 +144,6 @@ namespace nlohmann {
 
     /*  price_t is a high-precision floating point number from the boost library (see types.h),
         but to start with, we just consider it as a double when dealing with JSON conversions.
-        It seems unlikely that we will need to receive `
     */
 
 /*
