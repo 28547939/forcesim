@@ -133,7 +133,7 @@ std::shared_ptr<Interface> Interface::get_instance(std::shared_ptr<Market::Marke
 //
 // in the second case, by "bare" list, I mean that a value's index in the returned list
 //  is just equal to the integer key for that value.
-//  eg. { 1: A, 0: B } returns the JSON array: [ A, B ]
+//  eg. { 0: A, 1: B } returns the JSON array: [ A, B ]
 
 template<typename RetKey>
 struct list_json_ret_t {
@@ -391,8 +391,8 @@ void Interface::crow__market_wait_for_stop(const crow::request& req, crow::respo
             uintmax_t tmp = jreq["timepoint"];
             tp = timepoint_t(tmp);
         } catch (json::out_of_range& e) {}
-        // it appears that type_error is thrown if the request body is empty (null) - the
-        // library interprets this as the 'timepoint' field being null
+        // type_error is thrown when the request body is empty - interpreted as null, so 
+        // we can't look up keys as if it were a JSON object
         catch (json::type_error& e) {}
 
         std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
