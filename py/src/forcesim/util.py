@@ -24,7 +24,7 @@ class JsonLoader():
 
 class JsonLoaders(Enum):
     Agents = auto()
-    Subscrbiers = auto()
+    Subscribers = auto()
     Info = auto()
 
 logger = forcesim_logging.get_logger('util')
