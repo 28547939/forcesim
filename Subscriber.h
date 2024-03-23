@@ -542,16 +542,29 @@ class Base_subscriber : public AbstractSubscriber {
 
         if (tp > m_now) {
             std::ostringstream e;
-            e << "update: subscriber cursor is ahead of timepoint_t argument:"
+            e << "update: subscriber cursor invalid: ahead of current time ("
                 << " cursor=" << std::to_string(tp.to_numeric()) 
                 << " m_now=" << std::to_string(m_now.to_numeric())
+                << ")"
             ; 
 
             throw std::invalid_argument(e.str());
             // caught in Subscribers::update
         }
 
-        auto live_cursor = this->factory->get_iterator(m, tp);
+        try {
+            auto live_cursor = this->factory->get_iterator(m, tp);
+        } catch (std::out_of_range& ex) {
+            std::ostringstream e;
+            e << "update: subscriber cursor is invalid: timeseries is uninitialized ("
+                << " cursor=" << std::to_string(tp.to_numeric()) 
+                << " m_now=" << std::to_string(m_now.to_numeric())
+                << ")"
+            ; 
+
+            throw std::out_of_range(e.str());
+            // caught in Subscribers::update
+        }
 
         int new_pending_records = 0;
         for ( ; tp < m_now; tp += granularity, live_cursor += granularity) {
