@@ -1,7 +1,8 @@
 
 
 #include "Market.h"
-#include "Subscriber.h"
+#include "Subscriber/Subscribers.h"
+#include "Subscriber/Factory.h"
 
 #include <glog/logging.h>
 #include <iostream>

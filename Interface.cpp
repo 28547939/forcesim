@@ -5,7 +5,10 @@
 #include <nlohmann/json.hpp>
 #include "Agent.h"
 #include "Interface.h"
-#include "Subscriber.h"
+#include "Subscriber/Subscriber.h"
+#include "Subscriber/Subscribers.h"
+#include "Subscriber/json_conversion.h"
+#include "Subscriber/Factory.h"
 #include "Market.h"
 #include "ts.h"
 #include <utility>
