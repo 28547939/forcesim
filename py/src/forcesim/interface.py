@@ -464,11 +464,3 @@ class Interface():
         ret=await self._aio_json_req('/market/reset', method='POST')
         ret=self._ok_or_raise(ret)
         return ret
-
-
-"""
-
-TODO make note of
- An uncaught exception occurred: [json.exception.type_error.304] cannot use at() with string
- usually because it's not being converted to JSON - just sending string representation
-"""
