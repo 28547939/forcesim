@@ -429,6 +429,9 @@ class ts {
 
         public:
 
+        // "trivial" view which is un-usable (to make view default-constructible)
+        view() = default;
+
         // the timepoint_t is the "current point in time" - point in time that data
         // will be read from
         view(
