@@ -2,7 +2,8 @@
 
 #include "Market.h"
 #include "Agent.h"
-#include "Subscriber.h"
+#include "Subscriber/Subscribers.h"
+#include "Subscriber/Factory.h"
 #include "Interface.h"
 
 #include <iostream>

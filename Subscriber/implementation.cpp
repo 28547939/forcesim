@@ -1,11 +1,11 @@
 
 
-#include "types.h"
-#include "Market.h"
+#include "../types.h"
+#include "../Market.h"
 #include <glog/logging.h>
 #include <nlohmann/json.hpp>
 
-#include "json_conversion.h"
+#include "../json_conversion.h"
 
 #include <iostream>
 
@@ -16,7 +16,11 @@
 #include <memory>
 
 
+#include "common.h"
 #include "Subscriber.h"
+#include "Factory.h"
+#include "Subscribers.h"
+#include "json_conversion.h"
 
 
 using asioudp = asio::ip::udp;
@@ -25,6 +29,7 @@ using asioudp = asio::ip::udp;
 
 namespace Subscriber {
 
+using namespace Subscriber;
 
 // *******************************************************yy
 // json conversion 

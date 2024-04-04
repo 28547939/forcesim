@@ -1,11 +1,12 @@
 #ifndef SUBSCRIBER_H
 #define SUBSCRIBER_H
 
-#include "types.h"
-#include "Market.h"
-#include "Info.h"
-#include "json_conversion.h"
+#include "../types.h"
+#include "../Market.h"
+#include "../Info.h"
+#include "../json_conversion.h"
 
+#include "common.h"
 
 #include <glog/logging.h>
 #include <nlohmann/json.hpp>
@@ -35,143 +36,6 @@ Subscribers operate as follows:
 */
 
 namespace Subscriber {
-
-using agentid_t = Market::agentid_t;
-using timepoint_t = timepoint_t;
-
-using asioudp = asio::ip::udp;
-
-// subscriber ID
-typedef numeric_id<subscriber_numeric_id_tag> id_t;
-
-// type of subscriber - corresponds to AgentAction, price_t, or Info::infoset_t as the 
-// actual type of the records processed by the subscriber
-enum class record_type_t { AGENT_ACTION, PRICE, INFO };
-
-enum class subscriber_flag_t {
-    // marked when the program has requested destruction/shutdown of a subscriber but
-    // pending_records_count > 0, in which case those records need to be processed
-    // and emitted to endpoints before the subscriber can be deleted
-    Dying,
-
-    // whether the subscriber has finished processing all available records
-    // this is set to false when Base_subscriber::update processes new records and makes them 
-    //  available to be emitted
-    // this is set to true when all the currently processed records have been converted, removed
-    //  from the deque of processed records, and ready to be emitted to the consumer / UDP endpoint
-    // this flag is also used to keep track of when to add a trailing empty record
-    //  at the end of the JSON to be emitted, to signal to the consumer that all records have been
-    //  processed
-    Flushed
-};
-
-std::string record_type_t_str(const record_type_t&);
-
-
-// *************************
-
-struct EndpointConfig {
-    asio::ip::address remote_addr;
-    int remote_port;
-
-    bool operator==(const EndpointConfig& e) const {
-        return 
-            e.remote_addr.to_string() == this->remote_addr.to_string()
-            && this->remote_port == e.remote_port;
-    }
-
-    // for std::map in the Subscribers class
-    struct Key {
-        size_t operator()(const Subscriber::EndpointConfig& e) const {
-            return std::hash<std::string>{}(
-                e.remote_addr.to_string() + std::to_string(e.remote_port)
-            );
-        }
-
-    };
-};
-
-inline std::ostream& operator<<(std::ostream& os, const EndpointConfig& c) {
-    return os << (c.remote_addr.to_string() + ":" + std::to_string(c.remote_port));
-}
-
-
-struct Endpoint {
-    protected:
-    std::shared_ptr<asioudp::socket> socket;
-    asioudp::endpoint endpoint;
-
-    public:
-    EndpointConfig config;
-
-    Endpoint(EndpointConfig c);
-    void emit(std::unique_ptr<json> j);
-
-};
-
-// *************************
-
-
-// configuration for subscriber objects
-struct Config {
-    record_type_t t;
-
-    EndpointConfig endpoint;
-
-    // Send data to the subscriber at every `granularity` steps of timepoint_t 
-    uintmax_t granularity;
-
-    // wait until thre are chunk_min_records which are converted to JSON before emitting
-    // to the endpoint
-    // (exception: when we shutdown the subscriber, any remaining pending records are sent)
-    uintmax_t chunk_min_records;
-};
-
-
-class AbstractSubscriber;
-
-
-// base class for Factory classes - see definition of Factory template later on
-struct AbstractFactory {
-    // construct a subscriber object, which immediately becomes abstract
-    virtual std::unique_ptr<AbstractSubscriber> operator()(Config config) = 0;
-
-    // when a Factory has been associated with a (unique) subscriber, we can
-    // wait for that subscriber to reach a certain point in time in its consumption 
-    // of data (see Factory definitions later on)
-    virtual bool wait(const timepoint_t&) = 0;
-};
-
-template<typename T>
-struct Factory;
-
-
-struct Endpoints {
-    private:
-    /*
-        Endpoints are kept in a global map and subscribers check an endpoint's refcount during 
-        subscriber destruction. An endpoint that is no longer used will be deleted. Multiple uses
-        of the same UDP endpoint will reference the single Endpoint object representing that 
-        UDP endpoint, as stored here.
-
-        We use this separate "Endpoints" class to allow both the AbstractSubscriber and Subscribers classes 
-        to access the endpoints map. AbstractSubscriber should have access to allow automatic Endpoint 
-        refcount decrementing when a subscriber is destroyed, since that functionality is the same
-        across all subscribers.
-        The static Subscribers class (see below) needs access in order to create the Endpoint when an 
-        AbstractSubscriber instance is added, and in order to emit the  JSON records that are processed 
-        by the subscribers.
-
-        Keeping the map in this separate class allows us to share the data without giving AbstractSubscriber
-        or Subscribers friend access to one another.
-    */
-    static std::unordered_map<EndpointConfig, std::shared_ptr<Endpoint>, 
-        EndpointConfig::Key> endpoints;
-
-    friend class AbstractSubscriber;
-    friend class Subscribers;
-};
-
 
 
 
@@ -344,72 +208,6 @@ class AbstractSubscriber {
 
 
 
-// static class which manages all the subscribers and calls their update and JSON conversion
-// methods
-class Subscribers {
-    // subscribers are stored here
-    static inline std::unordered_map<id_t, std::unique_ptr<AbstractSubscriber>, id_t::Key> idmap;
-    // mutex for idmap
-    static inline std::recursive_mutex it_mtx;
-
-    public:
-
-    //  milliseconds between scans over the subscriber map (idmap member here), to check 
-    //      for any pending records (and convert them to JSON)
-    //      the program can change the poll interval during runtime by modifying this variable 
-    static inline std::atomic<int> manager_thread_poll_interval;
-
-    // TODO not yet implemented
-    static inline std::atomic<bool> shutdown_signal;
-
-    // call update on all the subscribers
-    static uintmax_t update(std::shared_ptr<Market::Market>, const timepoint_t&);
-
-    // add one or more subscribers
-    // variant contains either the ID associated with the successful operation, or a string error message
-    static std::variant<id_t, std::string>
-    add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair);
-    static std::deque< std::variant<Subscriber::id_t, std::string> >
-    add(std::deque<std::pair<std::shared_ptr<AbstractFactory>, Config>> c);
-
-    // result of a delete operation
-    enum class delete_status_t { DELETED, MARKED, DOES_NOT_EXIST };
-
-    // delete one or more subscribers
-    // if sync is true, then call wait_flag(subscriber_flags_t::Flushed) on the subcriber
-    // first, to wait for it to release all of its remaining records
-    static std::deque<std::pair<id_t, delete_status_t>>
-    del(std::deque<id_t>, bool sync = false);
-    static delete_status_t 
-    del(id_t, bool sync = false);
-
-    // list/describe all subscribers
-    struct list_entry_t {
-        id_t id;
-        uintmax_t pending_records;
-        std::string endpoint;
-        record_type_t record_type;
-    };
-    static std::deque<list_entry_t> 
-    list();
-
-    // call the wait method on the subscriber with a given id (see AbstractSubscriber::wait)
-    static bool wait(const id_t& id, const timepoint_t& tp) {
-        auto it = idmap.find(id);
-        if (it == idmap.end()) {
-            return false;
-        }
-
-        (it->second)->wait(tp);
-        return true;
-    }
-
-    // to be called once; the manager thread periodically calls subscribers' JSON conversion
-    // methods, and then emits the data to the endpoints
-    // max_record_split is the maximum number of records that should be included in a single JSON
-    //  conversion (UDP message)
-    static void launch_manager_thread(int max_record_split);
-};
 
 
 
@@ -552,8 +350,34 @@ class Base_subscriber : public AbstractSubscriber {
             // caught in Subscribers::update
         }
 
+
+
+        int new_pending_records = 0;
         try {
             auto live_cursor = this->factory->get_iterator(m, tp);
+
+            try {
+                for ( ; tp < m_now; tp += granularity, live_cursor += granularity) {
+
+                    if (live_cursor.has_value()) {
+                        this->pending_records.insert(
+                            this->pending_records.end(), 
+                            { tp, *live_cursor }
+                        );
+                        new_pending_records++;
+                    }
+                }
+
+            } catch (std::out_of_range& ex) {
+                std::ostringstream e;
+                e << "update: subscriber cursor is invalid: unknown error ("
+                    << " cursor=" << std::to_string(tp.to_numeric()) 
+                    << " m_now=" << std::to_string(m_now.to_numeric())
+                    << ")"
+                ; 
+
+                throw std::out_of_range(e.str());
+            }
         } catch (std::out_of_range& ex) {
             std::ostringstream e;
             e << "update: subscriber cursor is invalid: timeseries is uninitialized ("
@@ -566,17 +390,6 @@ class Base_subscriber : public AbstractSubscriber {
             // caught in Subscribers::update
         }
 
-        int new_pending_records = 0;
-        for ( ; tp < m_now; tp += granularity, live_cursor += granularity) {
-
-            if (live_cursor.has_value()) {
-                this->pending_records.insert(
-                    this->pending_records.end(), 
-                    { tp, *live_cursor }
-                );
-                new_pending_records++;
-            }
-        }
 
         // need to add granularity to account for the period elapsed between the 
         // last record processed during the previous invocation and the first record
@@ -676,204 +489,6 @@ class Impl<price_t> : public Base_subscriber<price_t>
 
 
 
-// a subscriber instance, depending on its RecordType, is associated with a parameter
-// that is used to select the data that it obtains from the Market and transmit to endpoints.
-// the parameter must be provided to the Factory to create the subscriber object (see 
-// Factory::operator(), below). A subscriber instance always has exactly one parameter
-// throughout its lifetime.
-//
-// the Factory class, used as the factory for subscribers, also maintains a static internal map 
-// to track which subscriber instances are associated with which parameters (see Factory::idmap,
-// below), using the subscriber IDs; and subscriber instances can be found from their IDs using the 
-// main map in the Subscribers class.
-//
-// in general the FactoryParameter can take any form, so we represent it as a struct; a null/trivial
-// parameter is just represented by an empty struct, as in the case of price_t.
-// 
-// in the future, we might have RecordType = Info (with parameter being the type of Info) or 
-// RecordType = AgentTrace (parameter being agent ID)
-
-template<typename RecordType>
-struct FactoryParameter;
-
-template<>
-struct FactoryParameter<AgentAction> {
-    Market::agentid_t id;
-    auto operator<=> (const FactoryParameter<AgentAction>&) const = default;
-};
-
-template<>
-struct FactoryParameter<price_t> {
-    auto operator<=> (const FactoryParameter<price_t>&) const = default;
-};
-
-
-// get_iterator_helper mediates between calls to get_iterator made to a Factory instance, and the 
-// corresponding generic iterator-getter method present in Market
-// it allows the get_iterator calls to be indexed by RecordType, whereas the Market API specifies the 
-//  method names explicitly (and with different argument lists) - price_iterator, agent_action_iterator,
-//  and info_iterator
-template<typename RecordType>
-typename ts<RecordType>::view 
-get_iterator_helper(std::shared_ptr<Market::Market>, const timepoint_t&, FactoryParameter<RecordType>);
-
-
-template<typename RecordType>
-struct Factory : AbstractFactory
-{
-    protected:
-
-    // ID of the subscriber that this factory instance is associated with, if any
-    // the Base_subscriber constructor calls Factory::associate to ensure that,
-    // upon destruction of that subscriber instance (and destruction of the Base_subscriber),
-    // the Factory will know which ID to clear from its map when it itself is destroyed.
-    // (see associate, ~Factory, delete_id below)
-    //
-    // The Factory is destroyed because an instance of it is stored in the Base_subscriber
-    // during construction of the subscriber. (see operator(), below)
-
-    std::optional<id_t> id;
-    inline static typename std::map<FactoryParameter<RecordType>, std::set<id_t>> idmap;
-    inline static std::mutex id_mtx;
-
-    FactoryParameter<RecordType> param; 
-
-
-    // called from the destructor to remove the idmap entry that we created in the `associate` 
-    // method below
-    static inline void delete_id(std::optional<id_t>& id) {
-        std::lock_guard L(id_mtx);
-
-        if (id.has_value()) {
-            VLOG(7) << "deleting subscriber from idmap  ID=" << id.value().to_string();
-
-            for (auto it = idmap.begin() ; it != idmap.end() ; it++) {
-                auto& set = it->second;
-                auto it_ = set.find(id.value());
-
-                if (it_ != set.end()) {
-                    set.erase(it_);
-                }
-            }
-        } else {
-            VLOG(7) << "deleting all subscribers from idmap";
-            idmap.clear();
-        }
-    }
-
-    public:
-    Factory(FactoryParameter<RecordType> p) 
-        : param(p) 
-    {}
-
-
-    /*  When the unique factory instance stored in a subscriber (via Base_subscriber) is destroyed
-        (which should only happen when the subscriber is destroyed), the 
-        factory instance updates the status map to remove the subscriber's
-        ID from the type-specific map.
-
-        If this instance is not associated with a Subscriber, no IDs are deleted
-        from the idmap.
-    */
-    virtual inline ~Factory() {
-        // only call delete_id if `associate` has been called; otherwise, 
-        // calling delete_id with an empty optional results in all IDs
-        // being deleted
-        if (this->id.has_value()) {
-            delete_id(this->id);
-        }
-    }
-
-    virtual std::unique_ptr<AbstractSubscriber> 
-    operator()(Config config) final {
-        auto copy = std::make_unique<Factory<RecordType>>(*this);
-        auto ptr = new Impl<RecordType>(config, std::move(copy));
-
-        return std::unique_ptr<AbstractSubscriber>(ptr);
-    }
-
-
-    virtual typename ts<RecordType>::view
-    get_iterator(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {
-        return get_iterator_helper<RecordType>(m, tp, this->param);
-    }
-
-    // Make this factory instance the unique instance associated with/stored in 
-    // a subscriber instance.
-    // This allows our FactoryBase instance to be destroyed exactly when that 
-    // subscriber is destroyed. When the FactoryBase is destroyed, delete_id 
-    // is called, which removes that subscriber from the internal map for this
-    // subscriber type.
-    virtual bool associate(const id_t& id) final {
-        if (this->id.has_value()) {
-            return false;
-        } else {
-            this->id = id;
-
-            // track the association of this subscriber with its parameter
-            auto it = idmap.find(this->param);
-            if (it == idmap.end()) {
-                idmap.insert({ this->param, { id } });
-            } else {
-                (it->second).insert(id);
-            }
-            return true;
-        }
-    }
-
-    virtual bool wait(const timepoint_t& tp) {
-        return wait_matching(this->param, tp);
-    }
-
-    // wait for all subscribers which have our parameter
-    static bool wait_matching(FactoryParameter<RecordType> x, const timepoint_t& tp) {
-        auto idmap = Factory<RecordType>::idmap;
-        auto it = idmap.find(x);
-
-        if (it == idmap.end()) {
-            return false;
-        } else {
-            std::for_each(idmap.begin(), idmap.end(), [](auto pair) {
-                auto idset = pair.second;
-                std::for_each(idset.begin(), idset.end(), [](id_t id) {
-                    
-                    // TODO 
-                });
-            });
-        }
-
-        return true;
-    }
-
-    static bool delete_matching(FactoryParameter<RecordType> x) {
-        auto it = idmap.erase(x);
-        if (it == idmap.end()) {
-            return false;
-        }
-
-        return true;
-    }
-};
-
-
-// json conversion 
-//
-void to_json(json& j, const record_type_t t);
-
-void from_json(const json&, Config&);
-
-void from_json(const json&, EndpointConfig&);
-void to_json(json& j, const EndpointConfig c);
-
-void from_json(const json&, FactoryParameter<AgentAction>&); 
-void from_json(const json&, FactoryParameter<price_t>&); 
-
-
-void to_json(json& j, const Subscribers::list_entry_t x);
-
-
-//
-//
 
 };
 
