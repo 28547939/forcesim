@@ -62,6 +62,13 @@ void Market::main_loop() {
 
     while (true) {
 
+        // set by op_t::SHUTDOWN
+        // either set during `op` execution at the end of this loop, or possibly by 
+        // another thread (such as in Market::start)
+        if (this->shutdown_signal == true) {
+            return;
+        }
+
         // Lock before the if statement to protect the statements in the condition
         // locks API access - applies to any client program accessing most methods in the Market class 
         //  for example the HTTP interface, via the Interface class
@@ -274,8 +281,8 @@ void Market::main_loop() {
             }  // if r > 0 (i.e. iterations remain)
             else {
                 VLOG(8) << "exiting loop without any iterations; no more iterations remain; "
-                    << "setting state=STOPPED";
-                this->state = state_t::STOPPED;
+                    << "setting state=PAUSED";
+                this->state = state_t::PAUSED;
             }
 
             // release api_mtx
@@ -305,7 +312,7 @@ void Market::main_loop() {
 
             if (this->state == state_t::RUNNING) {
                 VLOG(5) << "state=RUNNING, but no agents are loaded";
-                this->state = state_t::STOPPED;
+                this->state = state_t::PAUSED;
             }
 
             // api_mtx only applies to functionality in the true side of the if statement
@@ -314,11 +321,12 @@ void Market::main_loop() {
             // when not in the RUNNING state, the Market goes "idle", waiting for an `op` to (re-)enter
             // the RUNNING state with additional iterations
             L_op.lock();
-            VLOG(8) << "state=STOPPED, waiting on op_queue";
-            this->op_queue_cv.wait(L_op);
+            VLOG(8) << "state=PAUSED, waiting on op_queue";
+            this->op_queue_cv.wait(L_op, [this](){ return this->op_queue.size() > 0; });
             while (true) {
                 // try to process another op on the queue (if any)
-                bool nonempty = this->op_execute_helper();
+                auto processed = this->op_execute_helper();
+
 
                 L_op.unlock();
                 // allow additional ops to be queued while we don't hold the lock
@@ -326,7 +334,7 @@ void Market::main_loop() {
                 // only try processing another op if there was one on the queue on the previous attempt
                 // if not, any ops that have just been queued (just after we unlocked above) can
                 // wait until the next opportunity
-                if (nonempty == true) {
+                if (processed.size() > 0) {
                     // attempt to try reading from the op queue again, but if the lock is being held
                     // at this moment, don't bother; any pending ops can wait until later
                     if (! L_op.try_lock()) {
@@ -394,7 +402,7 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
 void 
 Market::queue_op(std::shared_ptr<op_abstract> op) {
     const std::lock_guard<std::mutex> lock(this->op_queue_mtx);
-    this->op_queue.push(op);
+    this->op_queue.push_back(op);
     this->op_queue_cv.notify_one();
 }
 
@@ -407,6 +415,35 @@ Market::configure(Config c) {
     }
 
     this->configured.store(true);
+}
+
+
+void
+Market::start() {
+    /*
+    if (this->started == true)
+        throw std::logic_error("Market::start should only be called once");
+        */
+
+    if (this->configured == false) {
+        this->configure({
+            100     // iter_block default
+        });
+    }
+
+    // check for any "ops" which may have been queued before start
+    this->op_execute_helper();
+
+
+    this->queue_op(
+        std::shared_ptr<op<op_t::START>> { 
+            new op<op_t::START> {} 
+        }
+    );
+
+    //this->started.store(true);
+
+    //this->start_sem.release();
 }
 
 
@@ -427,10 +464,10 @@ Market::run(std::optional<int> count) {
 }
 
 void 
-Market::stop() {
+Market::pause() {
     std::lock_guard L(this->api_mtx);
 
-    this->state = state_t::STOPPED;
+    this->state = state_t::PAUSED;
     this->remaining_iter = 0;
 }
 
@@ -438,7 +475,7 @@ void
 Market::reset() {
     std::lock_guard L(this->api_mtx);
     using Ss = Subscriber::Subscribers;
-    this->stop();
+    this->pause();
 
     this->del_agents();
 
@@ -667,19 +704,37 @@ Market::test_evaluate(
 }
 
 
+// scan over the op_queue once and execute any ops found, optionally restricting to those
+// ops which have an opt_t type equal to one of the types present in filter_types
+//
+// return the number of ops processed for each type
+std::map<enum op_t, std::size_t>
+Market::op_execute_helper(std::optional<std::set<enum op_t>> filter_types) {
+    std::map<enum op_t, std::size_t> processed = {};
 
-// returns true if there were any items on the queue
-bool 
-Market::op_execute_helper() {
-    bool ret = false;
-    while (this->op_queue.size() > 0) {
-        std::shared_ptr<op_abstract> op = this->op_queue.front();
-        this->op_queue.pop();
+    // no longer continuously checking the op_queue; it's likely that access to the op_queue
+    // is already locked, so that there won't be any new entries; re-scanning is up to the caller
+    //while (this->op_queue.size() > 0) {
+
+    for (std::shared_ptr<op_abstract>& op : this->op_queue) {
+        if (filter_types.has_value() && ! filter_types.value().contains(op->t)) 
+            continue;
+
+        if (processed.find(op->t) == processed.end()) {
+            processed.insert({ op->t, 0 });
+        } else {
+            ++processed[op->t];
+        }
         op->execute(*this);
-        ret = true;
     }
 
-    return ret;
+    std::erase_if(this->op_queue, [&filter_types](auto& val) { 
+        return filter_types.has_value()
+            ? filter_types.value().contains(val->t)
+            : true;
+    });
+
+    return processed;
 }
 
 };

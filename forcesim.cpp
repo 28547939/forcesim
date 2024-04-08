@@ -10,6 +10,9 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <deque>
+#include <csignal>
+#include <functional>
+#include <thread>
 
 #include "json_conversion.h"
 
@@ -18,17 +21,14 @@
 
 
 namespace {
-    volatile std::sig_atomic_t signal_status;
+    volatile std::atomic<bool> shutdown_signal;
 }
 void signal_handler (int s) {
-    signal_status = s;
-    Subscriber::Subscribers::shutdown_signal.store(true);
-    Market::Market::shutdown_signal.store(true);
-
-    // TODO
-
-
+    if (s == SIGINT || s == SIGTERM) {
+        shutdown_signal.store(true);
+    }
 };
+
 namespace po = boost::program_options;
 
 int main (int argc, char* argv[]) {
@@ -84,6 +84,8 @@ int main (int argc, char* argv[]) {
         Subscriber::Subscribers::launch_manager_thread(
             vm["subscriber-max-records"].as<int>()
         );
+
+        VLOG(5) << "Subscriber manager thread exiting";
     });
 
     asio::ip::address listen_addr = asio::ip::address::from_string(
@@ -96,13 +98,34 @@ int main (int argc, char* argv[]) {
         auto i = Interface::get_instance(m);
 
         i->start(listen_addr, listen_port);
+        VLOG(5) << "Interface thread exiting";
     });
 
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
+
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (shutdown_signal == true) {
+
+            Subscriber::Subscribers::shutdown_signal.store(true);
+            Interface::get_instance(m)->stop();
+
+            m->queue_op(
+                std::shared_ptr<Market::op<Market::op_t::SHUTDOWN>> { 
+                    new Market::op<Market::op_t::SHUTDOWN> {} 
+                }
+            );
+
+            LOG(INFO) << "Signal received, shutting down\n";
+            break;
+        }
+    }
 
     t0.join();
     t1.join();
     t2.join();
 
-
-
+    VLOG(2) << "exiting\n";
+    return 0;
 }

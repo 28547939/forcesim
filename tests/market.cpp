@@ -43,6 +43,8 @@ int main (int argc, char* argv[]) {
 
     auto factory = std::make_shared<Subscriber::Factory<price_t>>();
     Subscriber::Subscribers::add({
+
+
         { factory, {
             Subscriber::record_type::PRICE,
             {

@@ -332,9 +332,8 @@ class Interface():
         ret=self._ok_or_raise(ret)
         return ret
 
-	# TODO wait_for_stop will need to be async
-    async def wait_for_stop(self):
-        ret=await self._aio_json_req('/market/wait_for_stop', method='GET')
+    async def wait_for_pause(self):
+        ret=await self._aio_json_req('/market/wait_for_pause', method='GET')
         ret=self._ok_or_raise(ret)
         return ret
 

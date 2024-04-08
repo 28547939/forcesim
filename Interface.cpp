@@ -124,6 +124,14 @@ std::shared_ptr<Interface> Interface::get_instance(std::shared_ptr<Market::Marke
     return Interface::instance;
 }
 
+std::shared_ptr<Interface> Interface::get_instance() {
+    if (Interface::instantiated != true) {
+        throw std::logic_error("get_instance() without arguments requires existing instance");
+    }
+
+    return Interface::instance;
+}
+
 /*
  ****************************************************************************************
  Generic list/array handling routines (see Interface.h)
@@ -371,19 +379,19 @@ void Interface::crow__market_run(const crow::request& req, crow::response& res) 
 }
 
 
-void Interface::crow__market_stop(const crow::request& req, crow::response& res) {
+void Interface::crow__market_pause(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
     interface->market->queue_op(
-        std::shared_ptr<Market::op<Market::op_t::STOP>> { new Market::op<Market::op_t::STOP> {} }
+        std::shared_ptr<Market::op<Market::op_t::PAUSE>> { new Market::op<Market::op_t::PAUSE> {} }
     );
 
-    res = interface->build_json_crow(std::nullopt, "stop request queued", std::nullopt);
+    res = interface->build_json_crow(std::nullopt, "pause request queued", std::nullopt);
     res.end();
 }
 
 
-void Interface::crow__market_wait_for_stop(const crow::request& req, crow::response& res) {
+void Interface::crow__market_wait_for_pause(const crow::request& req, crow::response& res) {
     auto interface = Interface::instance;
 
     interface->handle_json_wrapper(req, res, 
@@ -398,10 +406,10 @@ void Interface::crow__market_wait_for_stop(const crow::request& req, crow::respo
         // we can't look up keys as if it were a JSON object
         catch (json::type_error& e) {}
 
-        std::optional<timepoint_t> actual_tp = interface->market->wait_for_stop(tp);
+        std::optional<timepoint_t> actual_tp = interface->market->wait_for_pause(tp);
 
         if (actual_tp.has_value()) {
-            res = interface->build_json_crow(std::nullopt, "stopped", json::object({
+            res = interface->build_json_crow(std::nullopt, "paused", json::object({
                 { "timepoint", json(actual_tp.value().to_numeric()) }
             }));
         } else {
@@ -416,7 +424,7 @@ void Interface::crow__market_wait_for_stop(const crow::request& req, crow::respo
             else {
                 res = interface->build_json_crow(
                     InterfaceErrorCode::General_error, 
-                    "Market::wait_for_stop unexpectedly returned", {}
+                    "Market::wait_for_pause unexpectedly returned", {}
                 );
             }
 
@@ -856,11 +864,11 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
     CROW_ROUTE(this->crow_app, "/market/run")
     .methods("POST"_method)(&Interface::crow__market_run);
 
-    CROW_ROUTE(this->crow_app, "/market/stop")
-    .methods("POST"_method)(&Interface::crow__market_stop);
+    CROW_ROUTE(this->crow_app, "/market/pause")
+    .methods("POST"_method)(&Interface::crow__market_pause);
 
-    CROW_ROUTE(this->crow_app, "/market/wait_for_stop")
-    .methods("GET"_method)(&Interface::crow__market_wait_for_stop);
+    CROW_ROUTE(this->crow_app, "/market/wait_for_pause")
+    .methods("GET"_method)(&Interface::crow__market_wait_for_pause);
 
     CROW_ROUTE(this->crow_app, "/market/configure")
     .methods("POST"_method)(&Interface::crow__market_configure);
@@ -914,12 +922,17 @@ bool Interface::start(std::optional<asio::ip::address> listen_addr, int port) {
         if (!listen_addr.has_value()) {
             listen_addr = asio::ip::address::from_string("0.0.0.0");
         }
-        this->crow_app.bindaddr(listen_addr->to_string()).port(port).multithreaded().run();
+        this->crow_app.bindaddr(listen_addr->to_string()).port(port)
+            .multithreaded().signal_clear().run();
         return true;
     } catch (std::runtime_error& e) {
         std::printf("Interface::start: %s", e.what());
         return false;
     }
+}
+
+void Interface::stop() {
+    this->crow_app.stop();
 }
 
 // TODO json return object with setter methods to incrementally 
