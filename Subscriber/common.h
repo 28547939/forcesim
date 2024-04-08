@@ -82,8 +82,10 @@ inline std::ostream& operator<<(std::ostream& os, const EndpointConfig& c) {
 
 
 struct Endpoint {
+    private:
+    asio::io_context io_context;
     protected:
-    std::shared_ptr<asioudp::socket> socket;
+    asioudp::socket socket;
     asioudp::endpoint endpoint;
 
     public:

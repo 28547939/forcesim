@@ -86,8 +86,11 @@ enum class op_t {
     ADD_AGENT,
     DEL_AGENT,
     RUN,
-    STOP,
+    PAUSE,
+    START,
+    SHUTDOWN,
 };
+template<enum op_t> struct op {};
 
 
 class Market;
@@ -95,7 +98,7 @@ class Market;
 
 enum class state_t {
     RUNNING,
-    STOPPED
+    PAUSED
 };
 
 
@@ -127,10 +130,11 @@ class Market : public std::enable_shared_from_this<Market> {
         std::map<agentid_t, AgentRecord> agents;
 
         // see op_t, and the op classes below
-        std::queue<std::shared_ptr<op_abstract>> op_queue;
+        std::deque<std::shared_ptr<op_abstract>> op_queue;
         std::mutex op_queue_mtx;
         std::condition_variable op_queue_cv;
-        bool op_execute_helper();
+        std::map<enum op_t, std::size_t>
+        op_execute_helper(std::optional<std::set<enum op_t>> = std::nullopt);
 
         /*  protects our internal data from simultaneous access 
             by multiple client threads
@@ -184,6 +188,9 @@ class Market : public std::enable_shared_from_this<Market> {
         // whether this instance's Market::configure has been called at least once
         std::atomic<bool> configured;
 
+        // set by shutdown() (used by OP_SHUTDOWN) - needed in order to escape from main_loop
+        std::atomic<bool> shutdown_signal;
+
         void main_loop();
 
         void perf_measurement(std::string key, 
@@ -197,7 +204,7 @@ class Market : public std::enable_shared_from_this<Market> {
     public:
 
         Market() :
-            state(state_t::STOPPED),
+            state(state_t::PAUSED),
             current_price(INITIAL_PRICE),
             start_sem(0)
         {
@@ -213,8 +220,6 @@ class Market : public std::enable_shared_from_this<Market> {
         }
         virtual ~Market();
 
-        // TODO not yet used - to be used to react to SIGINT/SIGTERM etc
-        static inline std::atomic<bool> shutdown_signal;
 
 
         // managing startup
@@ -235,11 +240,32 @@ class Market : public std::enable_shared_from_this<Market> {
 
             std::thread t ([this]() {
 
-                if (!this->started == true) {
-                    this->start_sem.acquire();
+                while (true) {
+                    std::unique_lock L_op { this->op_queue_mtx };
+                    this->op_queue_cv.wait(L_op, [this](){ return this->op_queue.size() > 0; });
+                    auto processed = this->op_execute_helper(
+                        {{ op_t::START, op_t::SHUTDOWN }}
+                    );
+                    if (processed.size() > 0) {
+                        if (processed.contains(op_t::SHUTDOWN)) {
+                            return;
+                        }
+
+                        // must be START
+                        break;
+                    }
                 }
 
-                this->main_loop();
+                try {
+                    this->main_loop();
+                } catch (std::system_error& e) {
+                    LOG(ERROR) << "Market::launch caught system_error: " 
+                        << e.code() << ": " << e.what();
+                } catch (std::exception& e) {
+                    LOG(ERROR) << "Market::launch caught exception: " << e.what();
+                }
+
+                VLOG(5) << "Market thread exiting";
             });
 
             if (auto_start == true)
@@ -279,26 +305,11 @@ class Market : public std::enable_shared_from_this<Market> {
 
 
         void queue_op(std::shared_ptr<op_abstract> op);
-
         void configure(Config);
+        void start();
 
-        void start() { 
-            if (this->started == true)
-                throw std::logic_error("Market::start should only be called once");
-
-            if (this->configured == false) {
-                this->configure({
-                    100     // iter_block default
-                });
-            }
-
-            this->started.store(true);
-
-            this->start_sem.release();
-
-            // check for any "ops" which may have been queued before start
-            this->op_execute_helper();
-
+        void shutdown () {
+            this->shutdown_signal.store(true);
         }
 
         //  API 
@@ -322,18 +333,18 @@ class Market : public std::enable_shared_from_this<Market> {
         // in the queue, it will most likely be processed immediately after this stop invocation, 
         // even though the RUN op was queued before the stop invocation.
         // 
-        // Generally it is recommended to run/stop the Market instance asynchronously using `op` objects.
-        void stop();
+        // Generally it is recommended to run/pause the Market instance asynchronously using `op` objects.
+        void pause();
 
         // destroy all `ts` structures, set time to 0, set price to INITIAL_PRICE,
         // and destroy all Subscribers
         void reset();
 
 
-        // wait for the Market to enter the state_t::STOPPED state
+        // wait for the Market to enter the state_t::PAUSED state
         // this will happen either
         // - after the specified number of iterations (via Market::run) has completed
-        // - when a 'STOP' op_t is queued and processed between iteration blocks
+        // - when a 'PAUSE' op_t is queued and processed between iteration blocks
         //
         // this can be useful to an HTTP client, for example, to ensure that the market 
         // is stopped and/or a certain number of iterations have occurred
@@ -342,12 +353,12 @@ class Market : public std::enable_shared_from_this<Market> {
         // try to wait; std::nullopt is returned if we 'timed out' waiting beyond this
         // threshold
         std::optional<timepoint_t> 
-        wait_for_stop(const std::optional<timepoint_t>& tp) {
+        wait_for_pause(const std::optional<timepoint_t>& tp) {
             using namespace std::chrono_literals;
             std::unique_lock L { this->api_mtx, std::defer_lock };
             while ( (tp.has_value() ? this->timept <= tp : true) ) {
                 L.lock();
-                if (this->state == state_t::STOPPED) {
+                if (this->state == state_t::PAUSED) {
                     return this->timept;
                 }
                 L.unlock();
@@ -433,7 +444,7 @@ class Market : public std::enable_shared_from_this<Market> {
 // so this "op" interface will probably mostly not be needed.
 // The one instance where it must be used is when the Market is not in the RUN state;
 // in that case, the Market is waiting on the op queue for an op that starts it.
-// It's also best to use the STOP op instead of calling Market::stop directly.
+// It's also best to use the PAUSE op instead of calling Market::stop directly.
 //
 // op objects can return values asynchronously to the client; the client maintains a
 // shared_ptr of the op, and a condition variable is used to notify when the return value
@@ -442,11 +453,15 @@ class Market : public std::enable_shared_from_this<Market> {
 // Aside from that, it could be used in the future as a way to independently organize
 // together functionality that needs to operate on a Market object, and which
 // is more complex than just a single call to one of the Market methods.
+//
+// 2024-04-04: SHUTDOWN is now another op that is required, like RUN. It signals to the Market
+// thread that it needs to return from main_loop().
 
 
 // Market is only aware of the abstract interface
 struct op_abstract {
     virtual void execute(Market &) = 0;
+    op_t t;
 };
 
 // return values
@@ -463,7 +478,10 @@ class op_base : public op_abstract {
     virtual op_ret<T> do_execute(Market &) = 0;
 
     public:
-    op_base() = default;
+    op_base() {
+        this->t = T;
+    }
+
     virtual op_ret<T> wait_ret() final {
         std::unique_lock<std::mutex> L(this->ret_mtx);
         if (this->ret.has_value()) {
@@ -486,12 +504,21 @@ class op_base : public op_abstract {
     }
 };
 
-template<enum op_t> struct op {};
 
 
+template<>
+struct op_ret<op_t::START> {};
+template<>
+class op<op_t::START> : public op_base<op_t::START> {
+    private:
+    op_ret<op_t::START> do_execute (Market &m) {
+        return {};
+    }
+};
 
-// This is the only op class that is strictly necessary - it needs to be used to 
-// set a Market into the RUN state once it's in the STOPPED state.
+
+// This is the one op class that is strictly necessary - it needs to be used to 
+// set a Market into the RUN state once it's in the PAUSED state.
 template<>
 struct op_ret<op_t::RUN> {};
 template<>
@@ -506,15 +533,29 @@ class op<op_t::RUN> : public op_base<op_t::RUN> {
     std::optional<int> count;
 };
 
-// this op class is also recommeneded - it ensures that competing calls to RUN
-// and STOP are processed in the order that they are invoked (i.e. queued)
+// This op class needs to be used to indicate to the Market thread that it needs to return
+// from main_loop() to allow the program to stop.
 template<>
-struct op_ret<op_t::STOP> {};
+struct op_ret<op_t::SHUTDOWN> {};
 template<>
-class op<op_t::STOP> : public op_base<op_t::STOP> {
+class op<op_t::SHUTDOWN> : public op_base<op_t::SHUTDOWN> {
     private:
-    op_ret<op_t::STOP> do_execute(Market &m) {
-        m.stop();
+    op_ret<op_t::SHUTDOWN> do_execute (Market &m) {
+        m.shutdown();
+        return {};
+    }
+};
+
+
+// this op class is also recommeneded - it ensures that competing calls to RUN
+// and PAUSE are processed in the order that they are invoked (i.e. queued)
+template<>
+struct op_ret<op_t::PAUSE> {};
+template<>
+class op<op_t::PAUSE> : public op_base<op_t::PAUSE> {
+    private:
+    op_ret<op_t::PAUSE> do_execute(Market &m) {
+        m.pause();
         return {};
     }
 };

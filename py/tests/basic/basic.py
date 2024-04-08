@@ -208,7 +208,7 @@ async def main():
 
         log.info(f'about to run {iter_block} iterations')
         await interface.run(iter_block)
-        await interface.wait_for_stop()
+        await interface.wait_for_pause()
 
 
 
@@ -221,7 +221,7 @@ async def main():
 
 
     # some Subscriber points can arrive after the initial flush - wait for stopped market first
-    await interface.wait_for_stop()
+    await interface.wait_for_pause()
     for (_, s) in subscribers.items():
         await s.wait_flushed()
     

@@ -273,8 +273,8 @@ class Interface : public std::enable_shared_from_this<Interface> {
     // TODO usage documentation for each method
 
     static void crow__market_run(const crow::request& req, crow::response&);
-    static void crow__market_stop(const crow::request&, crow::response&);
-    static void crow__market_wait_for_stop(const crow::request&, crow::response&);
+    static void crow__market_pause(const crow::request&, crow::response&);
+    static void crow__market_wait_for_pause(const crow::request&, crow::response&);
 
     static void crow__market_configure(const crow::request&, crow::response&);
     static void crow__market_start(const crow::request& req, crow::response& resp);
@@ -394,6 +394,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
 
     public:
     static std::shared_ptr<Interface> get_instance(std::shared_ptr<Market::Market>);
+    static std::shared_ptr<Interface> get_instance();
 
     json build_json(
         std::optional<enum InterfaceErrorCode> error_code, 
@@ -411,6 +412,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
     );
 
     bool start(std::optional<asio::ip::address>, int);
+    void stop();
 
     constexpr static const float api_version = 0.1000;
 };

@@ -10,7 +10,7 @@ standard logging set-up to be used throughout
 def setup_logger(logger : logging.Logger, additional_handlers : List[logging.Handler] =[]):
 
     fmt=logging.Formatter(
-        format='',
+        fmt='',
         datefmt='%Y-%m-%d_%H-%M-%S.%f'
     )
 

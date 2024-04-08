@@ -131,18 +131,16 @@ Endpoints::endpoints;
 // *******************************************************
 
 
-Endpoint::Endpoint(EndpointConfig c) : config(c) {
-    asio::io_context io_context;
-    this->endpoint = asioudp::endpoint(c.remote_addr, c.remote_port);
-    this->socket = std::shared_ptr<asioudp::socket>(
-        new asioudp::socket(io_context)
-    );
-   socket->open(asioudp::v4());
+Endpoint::Endpoint(EndpointConfig c) 
+    :   config(c), socket(this->io_context),
+        endpoint(c.remote_addr, c.remote_port)
+{
+   socket.open(asioudp::v4());
 }
 
 void Endpoint::emit(std::unique_ptr<json> j) {
     std::string s(j->dump());
-    socket->send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
+    socket.send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
 }
 
 uintmax_t Subscribers::update(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {
@@ -300,12 +298,10 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
         auto& idmap = Subscribers::idmap;
 
-       /* TODO not yet implemented
         if (Subscribers::shutdown_signal == true) {
-            VLOG(4) << "Subscribers manager_thread shutting down";
+            VLOG(4) << "Subscribers manager thread shutting down";
             return;
         }
-        */
 
         //VLOG(9) << "about to check Subscribers::idmap with " << idmap.size() << " elements";
 
@@ -363,7 +359,7 @@ AbstractSubscriber::AbstractSubscriber(Config& c)
 }
 
 AbstractSubscriber::~AbstractSubscriber() {
-    auto config = this->endpoint->config;
+    auto& config = this->endpoint->config;
 
     // if our copy of the endpoint is the only one remaining (aside from the container), 
     // delete it from the main container
