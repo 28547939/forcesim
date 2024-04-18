@@ -30,12 +30,16 @@ namespace Subscriber {
 
 
 // static class which manages all the subscribers and calls their update and JSON conversion
-// methods
+// methods, also handling the sending of JSON records to Endpoints (with its separate manager_thread)
+// the intention is that clients never actually touch subscriber objects directly (AbstractSubscriber
+// and its descendants).
 class Subscribers {
     // subscribers are stored here
-    static inline std::unordered_map<id_t, std::unique_ptr<AbstractSubscriber>, id_t::Key> idmap;
+    static inline std::unordered_map<id_t, std::unique_ptr<AbstractSubscriber>, id_t::Key> 
+    idmap;
     // mutex for idmap
-    static inline std::recursive_mutex it_mtx;
+    static inline std::recursive_mutex 
+    it_mtx;
 
     public:
 
@@ -44,16 +48,16 @@ class Subscribers {
     //      the program can change the poll interval during runtime by modifying this variable 
     static inline std::atomic<int> manager_thread_poll_interval;
 
-    // TODO not yet implemented
     static inline std::atomic<bool> shutdown_signal;
 
     // call update on all the subscribers
     static uintmax_t update(std::shared_ptr<Market::Market>, const timepoint_t&);
 
     // add one or more subscribers
-    // variant contains either the ID associated with the successful operation, or a string error message
+    // variant contains either the ID associated with the successfully added subscribers, 
+    // or a string error message
     static std::variant<id_t, std::string>
-    add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair);
+    add(std::shared_ptr<AbstractFactory>, Config);
     static std::deque< std::variant<Subscriber::id_t, std::string> >
     add(std::deque<std::pair<std::shared_ptr<AbstractFactory>, Config>> c);
 
@@ -62,7 +66,8 @@ class Subscribers {
 
     // delete one or more subscribers
     // if sync is true, then call wait_flag(subscriber_flags_t::Flushed) on the subcriber
-    // first, to wait for it to release all of its remaining records
+    // first, to wait for all of its remaining records to be "released" (emitted to Endpoints by
+    // our manager thread)
     static std::deque<std::pair<id_t, delete_status_t>>
     del(std::deque<id_t>, bool sync = false);
     static delete_status_t 
@@ -79,7 +84,7 @@ class Subscribers {
     list();
 
     // call the wait method on the subscriber with a given id (see AbstractSubscriber::wait)
-    static bool wait(const id_t& id, const timepoint_t& tp) {
+    static bool wait(const id_t& id, const std::optional<timepoint_t>& tp) {
         auto it = idmap.find(id);
         if (it == idmap.end()) {
             return false;

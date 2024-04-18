@@ -7,7 +7,7 @@
 
 enum class Direction { UP, DOWN };
 
-inline enum Direction direction_str_ctor(std::string s) {
+inline enum Direction direction_str_ctor(const std::string& s) {
     if (s == "UP") {
         return Direction::UP;
     }
@@ -65,9 +65,17 @@ class numeric_id {
 
     };
 };
+
 // trivial structs used as template arguments to numeric_id
 struct market_numeric_id_tag {};
 struct subscriber_numeric_id_tag {};
+
+inline std::ostream& operator<<(std::ostream& os, const numeric_id<market_numeric_id_tag>& id) {
+    return os << id.str();
+}
+inline std::ostream& operator<<(std::ostream& os, const numeric_id<subscriber_numeric_id_tag>& id) {
+    return os << id.str();
+}
 
 
 class timepoint_t {

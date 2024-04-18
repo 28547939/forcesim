@@ -1,7 +1,7 @@
 #ifndef MARKET_H
 #define MARKET_H 1
 
-#include "Agent.h"
+#include "Agent/Agent.h"
 #include "types.h"
 
 #include <stack>
@@ -23,7 +23,6 @@
 #include <glog/logging.h>
 
 namespace Market {
-
 
 const price_t INITIAL_PRICE = 1;
 
@@ -54,12 +53,12 @@ class AgentRecord {
             (t - this->created) % this->agent->config.schedule_every == 0;
     }
 
-    std::unique_ptr<Agent> agent;
+    std::unique_ptr<Agent::Agent> agent;
     const agentid_t id;
     const timepoint_t created;
 
     // Intended to be accessed directly by the Market class, so no encapsulation
-    std::unique_ptr<ts<AgentAction>> history;
+    std::unique_ptr<ts<Agent::AgentAction>> history;
 
 
     enum class Flags {
@@ -115,18 +114,9 @@ struct Config {
 };
 
 
-/*
-Config default_config = { 
-    100,
-    50000,
-    50000
-};
-*/
-
 
 class Market : public std::enable_shared_from_this<Market> {
     private:
-        //Config config;
         std::map<agentid_t, AgentRecord> agents;
 
         // see op_t, and the op classes below
@@ -170,8 +160,8 @@ class Market : public std::enable_shared_from_this<Market> {
 
         // invoke an Agent's computation 
         // can be overridden to provide an alternate "evaluation model"
-        virtual std::tuple<std::optional<AgentAction>, price_t, std::optional<info_view_t>> 
-            do_evaluate(AgentRecord&, price_t, price_t, std::optional<info_view_t>);
+        virtual std::tuple<std::optional<Agent::AgentAction>, price_t, std::optional<Agent::info_view_t>> 
+            do_evaluate(AgentRecord&, price_t, price_t, std::optional<Agent::info_view_t>);
 
         // iter_block is the number of time steps which take place "contiguously" (in an "iteration
         // block"), with no other activity.
@@ -251,7 +241,7 @@ class Market : public std::enable_shared_from_this<Market> {
                             return;
                         }
 
-                        // must be START
+                        // because of our filter, above, the op must have been START
                         break;
                     }
                 }
@@ -274,13 +264,13 @@ class Market : public std::enable_shared_from_this<Market> {
             return std::move(t);
         }
 
-        ts<AgentAction>::view 
+        ts<Agent::AgentAction>::view 
         agent_action_iterator(const timepoint_t&, agentid_t);
 
         ts<price_t>::view 
         price_iterator(const timepoint_t&);
 
-        std::optional<info_view_t>
+        std::optional<Agent::info_view_t>
         info_iterator(const std::optional<timepoint_t>&);
 
 
@@ -373,7 +363,7 @@ class Market : public std::enable_shared_from_this<Market> {
         /* 
         */
         agentid_t 
-        add_agent(std::unique_ptr<Agent>);
+        add_agent(std::unique_ptr<Agent::Agent>);
 
         /* 
             std::nullopt argument => delete all 
@@ -390,15 +380,15 @@ class Market : public std::enable_shared_from_this<Market> {
 
 
         /*
-            Retrieves an agent's history of AgentAction structs: the buy/sell action they have 
-                taken at each timepoint (see Agent.h for AgentAction)
+            Retrieves an agent's history of Agent::AgentAction structs: the buy/sell action they have 
+                taken at each timepoint (see Agent.h for Agent::AgentAction)
 
             If erase is true, the unique_ptr holding the history is std::move'd to the return value.
             If erase is false, the current contents of the history are copied.
 
             std::nullopt is returned if the agent is not present in the map
         */
-        std::optional<std::unique_ptr<ts<AgentAction> >>
+        std::optional<std::unique_ptr<ts<Agent::AgentAction> >>
         get_agent_history(const agentid_t&, bool erase);
 
 
@@ -425,8 +415,8 @@ class Market : public std::enable_shared_from_this<Market> {
 
         // used to test/simulate what price would result from an iteration on one Agent
         // 
-        std::pair<price_t, AgentAction>
-        test_evaluate(std::shared_ptr<Agent>, price_t, price_t, std::optional<Info::infoset_t>);
+        std::pair<price_t, Agent::AgentAction>
+        test_evaluate(std::shared_ptr<Agent::Agent>, price_t, price_t, std::optional<Info::infoset_t>);
 
 };
 
@@ -576,8 +566,8 @@ class op<op_t::ADD_AGENT> : public op_base<op_t::ADD_AGENT> {
             };
         }
     public:
-    op(std::unique_ptr<Agent> agent) : agent(std::move(agent)), op_base() {}
-    std::unique_ptr<Agent> agent;
+    op(std::unique_ptr<Agent::Agent> agent) : agent(std::move(agent)), op_base() {}
+    std::unique_ptr<Agent::Agent> agent;
 };
 
 
