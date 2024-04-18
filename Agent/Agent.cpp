@@ -10,6 +10,8 @@
 
 #include <glog/logging.h>
 
+namespace Agent {
+
 Agent_impl<AgentType::Trivial>::Agent_impl(AgentConfig<AgentType::Trivial> c) 
     : Agent_base<AgentType::Trivial>(c), Agent(c) {
 }
@@ -402,5 +404,7 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
         diff < 0 ? Direction::UP : Direction::DOWN,
         internal_force
     };
+
+}
 
 }

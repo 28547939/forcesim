@@ -48,8 +48,9 @@ class AbstractSubscriber {
     std::condition_variable_any flags_cv;
 
     protected:
-
+    // default-initialized to empty until we either fetch or construct an Endpoint
     std::shared_ptr<Endpoint> endpoint;
+
     std::recursive_mutex mtx;
     std::condition_variable_any wait_cv;
 
@@ -215,7 +216,7 @@ class AbstractSubscriber {
 // static association between the template type parameters and our enum values
 template<typename T>
 struct constraint {};
-template<> struct constraint<AgentAction> { inline static const record_type_t t = record_type_t::AGENT_ACTION; };
+template<> struct constraint<Agent::AgentAction> { inline static const record_type_t t = record_type_t::AGENT_ACTION; };
 template<> struct constraint<price_t> { inline static const record_type_t t = record_type_t::PRICE; };
 template<> struct constraint<Info::Abstract> { inline static const record_type_t t = record_type_t::INFO; };
 
@@ -223,7 +224,7 @@ template<> struct constraint<Info::Abstract> { inline static const record_type_t
 // templated mix-in sitting below AbstractSubscriber and above the specific Subscriber (Impl) classes
 template<typename RecordType, 
     typename = std::enable_if_t<
-        std::is_same<RecordType, AgentAction>::value || 
+        std::is_same<RecordType, Agent::AgentAction>::value || 
         std::is_same<RecordType, price_t>::value
 >>
 class Base_subscriber : public AbstractSubscriber {
@@ -239,7 +240,7 @@ class Base_subscriber : public AbstractSubscriber {
 
     // A subscriber stores a copy of a factory to make it possible for other classes to identify
     // this specific subscriber instance based on its ID and the parameters used to create
-    // the subscriber.
+    // the subscriber, even when it is downcast to AbstractSubscriber.
     // The factory class has a static map which tracks the existence of this subscriber instance
     // with its ID; this map is automatically updated when the subscriber is destroyed
     std::unique_ptr<Factory<RecordType>> factory; 
@@ -435,11 +436,11 @@ template<typename T>
 class Impl;
 
 template<>
-class Impl<AgentAction> : public Base_subscriber<AgentAction>
+class Impl<Agent::AgentAction> : public Base_subscriber<Agent::AgentAction>
 {
     public:
-    Impl(Config& config, std::unique_ptr<Factory<AgentAction>> f)  
-        : Base_subscriber<AgentAction>(config, std::move(f))
+    Impl(Config& config, std::unique_ptr<Factory<Agent::AgentAction>> f)  
+        : Base_subscriber<Agent::AgentAction>(config, std::move(f))
     {}
 
     const agentid_t agent_id;
@@ -450,7 +451,7 @@ class Impl<AgentAction> : public Base_subscriber<AgentAction>
 
         // chunk will be a JSON object of the form
         // { "AGENT_ACTION": {
-        //      (agent ID): (list of timestamp_t, AgentAction pairs)
+        //      (agent ID): (list of timestamp_t, Agent::AgentAction pairs)
         //  }}
         json* jptr = new json(json::object_t({
             { r_t.get<std::string>(), {
