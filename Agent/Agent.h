@@ -5,14 +5,15 @@
 #include <memory>
 #include <algorithm>
 #include <nlohmann/json.hpp>
-#include "Info.h"
-#include "types.h"
-#include "ts.h"
+#include "../Info.h"
+#include "../types.h"
+#include "../ts.h"
 
 using json = nlohmann::json;
 
 #include <random>
 
+namespace Agent {
 
 typedef std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view_t;
 
@@ -356,6 +357,6 @@ class Agent_impl<AgentType::ModeledCohort_v2> : public ModeledCohortAgent_v1,
 };
 using ModeledCohortAgent_v2 = Agent_impl<AgentType::ModeledCohort_v2>;
 
-
+};
 
 #endif

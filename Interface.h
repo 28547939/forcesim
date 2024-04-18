@@ -1,6 +1,7 @@
 
 #include <crow.h>
 #include "Market.h"
+#include "Agent/Factory.h"
 #include "json_conversion.h"
 
 #include <functional>
@@ -272,8 +273,43 @@ class Interface : public std::enable_shared_from_this<Interface> {
 
     // TODO usage documentation for each method
 
+    /*
+        POST /market/run
+
+        Returns:
+            null
+    */
     static void crow__market_run(const crow::request& req, crow::response&);
+    /*
+        POST /market/pause
+
+        Returns:
+            null
+        
+        Errors:
+    */
     static void crow__market_pause(const crow::request&, crow::response&);
+    /*
+        POST /market/wait_for_pause
+        {
+            "timepoint": (optional JSON integer value of latest timepoint to wait before timing out)
+        }
+
+        Returns:
+            {
+                "timepoint": (JSON integer value of timepoint when pause took place)
+            }
+
+        Errors:
+            General_error   if the request timed out
+            {
+                "limit":    (JSON integer value of timeout argument provided in the request)
+            }
+
+            General_error   if we unexpectedly returned earlier than the supplied timeout value
+            null
+        
+    */
     static void crow__market_wait_for_pause(const crow::request&, crow::response&);
 
     static void crow__market_configure(const crow::request&, crow::response&);
@@ -326,8 +362,6 @@ class Interface : public std::enable_shared_from_this<Interface> {
         Returns: more or less, map<timepoint_t, deque<Market::AgentRecord>> in JSON form
 	*/
     static void crow__list_agents(const crow::request&, crow::response&);
-
-// list_agents
 
     /*
         POST /agent/get_history

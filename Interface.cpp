@@ -23,55 +23,7 @@ using json = nlohmann::json;
 using namespace std;
 
 
-
-namespace {
-
-    // constructing Agent instances from data provided from the HTTP interface
-    // currently the JSON configuration is interpreted by the AgentConfig constructors
-    // (in most other situations, we use specific JSON conversion functions defined
-    // in json_conversion.cpp, automatically called by the JSON library)
-
-    using agent_factory_map_t = 
-        std::map<enum AgentType, std::function<unique_ptr<Agent>(json)>>;
-
-    template<enum AgentType T>
-    agent_factory_map_t::value_type
-    agent_factory_generator() {
-        return {
-            T,
-            [](json y) {
-                auto agent_ptr = new Agent_impl<T>(AgentConfig<T>(y));
-
-                // this can be used to avoid errors with multiple inheritance in the case of an agent
-                // class inheriting from other agent class, if virtual inheritance is not used
-                // but this will create its own problems
-                //auto agent_ptr_base = dynamic_cast<Agent_base<T>*>(agent_ptr);
-
-                auto agent_ptr_base = dynamic_cast<Agent*>(agent_ptr);
-
-                return unique_ptr<Agent>(agent_ptr_base);
-            }
-        };
-    }
-
-    agent_factory_map_t agent_factory {
-        agent_factory_generator<AgentType::Trivial>(),
-        agent_factory_generator<AgentType::BasicNormalDist>(),
-        agent_factory_generator<AgentType::ModeledCohort_v1>(),
-        agent_factory_generator<AgentType::ModeledCohort_v2>()
-        /* each invocation of agent_factory_generator produces something like the following:
-        { "TrivialAgent", 
-            [](json y) {
-                return unique_ptr<Agent>(
-                    new TrivialAgent (AgentConfig<AgentType::Trivial>(y))
-                );
-            }
-        },
-        */
-    };
-
-};
-
+using namespace Agent;
 
 namespace {
     using namespace Subscriber;
@@ -370,7 +322,9 @@ void Interface::crow__market_run(const crow::request& req, crow::response& res) 
         }
 
         interface->market->queue_op(
-            std::shared_ptr<Market::op<Market::op_t::RUN>> { new Market::op<Market::op_t::RUN> (iter_count) }
+            std::shared_ptr<Market::op<Market::op_t::RUN>> { 
+                new Market::op<Market::op_t::RUN> (iter_count) 
+            }
         );
 
         res = interface->build_json_crow(std::nullopt, "run request queued", std::nullopt);
@@ -516,9 +470,9 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
             errstr = std::string("unknown agent type: "+ spec.type);
         } else {
             AgentType t = t_it->second;
-            auto factory_element = agent_factory.find(t);
+            auto factory_element = Agent::factory.find(t);
 
-            if (factory_element == agent_factory.end()) {
+            if (factory_element == Agent::factory.end()) {
                 errstr = std::string("factory not implemented: ") + spec.type;
             } else {
                 std::deque<Market::agentid_t> ids;

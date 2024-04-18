@@ -13,12 +13,12 @@ namespace Market {
 Market::~Market() {}
 
 
-inline std::tuple<std::optional<AgentAction>, price_t, std::optional<info_view_t>> 
+inline std::tuple<std::optional<Agent::AgentAction>, price_t, std::optional<Agent::info_view_t>> 
 Market::do_evaluate(
     AgentRecord& agent, 
     price_t p_existing, 
     price_t p_current,
-    std::optional<info_view_t> info_view
+    std::optional<Agent::info_view_t> info_view
 ) {
     auto [act, info_view_ret] = agent.agent->evaluate(p_existing, std::move(info_view));
 
@@ -160,7 +160,7 @@ void Market::main_loop() {
                                 (*info_view)->reset_cursor();
                             }
                             
-                            // nullopt AgentAction means there was an exception during the Agent computation
+                            // nullopt Agent::AgentAction means there was an exception during the Agent computation
                             // (see Agent class)
                             if (agent_action.has_value()) {
                                 agent_record.history->append(agent_action.value());
@@ -356,7 +356,7 @@ void Market::main_loop() {
  * All of these methods lock this->api_mtx
 */
 
-ts<AgentAction>::view 
+ts<Agent::AgentAction>::view 
 Market::agent_action_iterator(const timepoint_t& tp, agentid_t id) {
     std::lock_guard L(this->api_mtx);
 
@@ -365,7 +365,7 @@ Market::agent_action_iterator(const timepoint_t& tp, agentid_t id) {
         throw std::out_of_range("agent not found");
     }
 
-    return ts<AgentAction>::view(*((record->second).history), tp);
+    return ts<Agent::AgentAction>::view(*((record->second).history), tp);
 }
 
 ts<price_t>::view 
@@ -376,7 +376,7 @@ Market::price_iterator(const timepoint_t& tp) {
 }
 
 // returns std::nullopt when info_history is empty or in case of error 
-std::optional<info_view_t>
+std::optional<Agent::info_view_t>
 Market::info_iterator(const std::optional<timepoint_t>& tp) {
     std::lock_guard L(this->api_mtx);
 
@@ -496,7 +496,7 @@ Market::reset() {
 }
 
 agentid_t 
-Market::add_agent(std::unique_ptr<Agent> a) {
+Market::add_agent(std::unique_ptr<Agent::Agent> a) {
     std::lock_guard L(this->api_mtx);
     const agentid_t id;
     VLOG(5) << "added agent (id=" << id.str() << ")";
@@ -505,8 +505,8 @@ Market::add_agent(std::unique_ptr<Agent> a) {
         std::move(a),
         id,
         this->timept,
-        std::unique_ptr<ts<AgentAction>>(
-            new ts<AgentAction>(this->timept)
+        std::unique_ptr<ts<Agent::AgentAction>>(
+            new ts<Agent::AgentAction>(this->timept)
         ),
         {}
     }});
@@ -529,7 +529,7 @@ Market::del_agents(std::optional<std::deque<agentid_t>> ids) {
             const agentid_t& id = pair.first;
 
             VLOG(7) << "waiting for subscribers associated with agent ID " << id.str();
-            Subscriber::Factory<AgentAction> f { {id} };
+            Subscriber::Factory<Agent::AgentAction> f { {id} };
             f.wait(this->timept); // TODO this should be wait_flushed
 
             deleted[id] = true;
@@ -549,7 +549,7 @@ Market::del_agents(std::optional<std::deque<agentid_t>> ids) {
                 deleted[id] = false;
             } else {
                 VLOG(7) << "waiting for subscribers associated with agent ID " << id.str();
-                Subscriber::Factory<AgentAction> f { {id} };
+                Subscriber::Factory<Agent::AgentAction> f { {id} };
                 f.wait(this->timept);
 
                 VLOG(5) << "deleted agent (id=" << it->first.str() << ")";
@@ -583,7 +583,7 @@ Market::list_agents() {
 
 
 
-std::optional<std::unique_ptr<ts<AgentAction> >>
+std::optional<std::unique_ptr<ts<Agent::AgentAction> >>
 Market::get_agent_history(const agentid_t& id, bool erase) {
     auto record = this->agents.find(id);
     if (record == this->agents.end()) {
@@ -597,15 +597,15 @@ Market::get_agent_history(const agentid_t& id, bool erase) {
     auto& history = (record->second).history;
 
     if (erase) {
-        Subscriber::Factory<AgentAction> f { {id} };
+        Subscriber::Factory<Agent::AgentAction> f { {id} };
         f.wait(history->first_tp());
 
         auto ret = std::move(history);
-        history.reset(new ts<AgentAction>(this->timept));
+        history.reset(new ts<Agent::AgentAction>(this->timept));
         return ret;
     } else {
-        auto r = new ts<AgentAction>(*history);
-        return std::unique_ptr< ts<AgentAction> > (r);
+        auto r = new ts<Agent::AgentAction>(*history);
+        return std::unique_ptr< ts<Agent::AgentAction> > (r);
     }
 }
 
@@ -660,14 +660,14 @@ Market::emit_info(Info::infoset_t& x) {
     }
 }
 
-std::pair<price_t, AgentAction>
+std::pair<price_t, Agent::AgentAction>
 Market::test_evaluate(
-    std::shared_ptr<Agent> agent, 
+    std::shared_ptr<Agent::Agent> agent, 
     price_t p_existing, 
     price_t p_current,
     std::optional<Info::infoset_t> info)
 {
-    std::optional<info_view_t> info_view;
+    std::optional<Agent::info_view_t> info_view;
 
     // needs to remain in-scope so that it's not destroyed before the agent instance
     // uses the sparse_view
@@ -684,13 +684,13 @@ Market::test_evaluate(
 
     // Market::do_evaluate requires that Agents be in a unique_ptr as usual; 
     // we fake that situation here
-    std::unique_ptr<Agent> agent_uniq(agent.get());
+    std::unique_ptr<Agent::Agent> agent_uniq(agent.get());
 
     AgentRecord record = AgentRecord {
         std::move(agent_uniq),
         0,
         0,
-        std::unique_ptr<ts<AgentAction>>(),
+        std::unique_ptr<ts<Agent::AgentAction>>(),
         {}
     };
 

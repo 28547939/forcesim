@@ -7,6 +7,7 @@
 #include "../json_conversion.h"
 
 #include "common.h"
+#include "Subscribers.h"
 
 
 #include <glog/logging.h>
@@ -34,6 +35,7 @@ namespace Subscriber {
 //
 // in general the FactoryParameter can take any form, so we represent it as a struct; a null/trivial
 // parameter is just represented by an empty struct, as in the case of price_t.
+// it needs to be copyable
 // 
 // in the future, we might have RecordType = Info (with parameter being the type of Info) or 
 // RecordType = AgentTrace (parameter being agent ID)
@@ -42,9 +44,9 @@ template<typename RecordType>
 struct FactoryParameter;
 
 template<>
-struct FactoryParameter<AgentAction> {
+struct FactoryParameter<Agent::AgentAction> {
     Market::agentid_t id;
-    auto operator<=> (const FactoryParameter<AgentAction>&) const = default;
+    auto operator<=> (const FactoryParameter<Agent::AgentAction>&) const = default;
 };
 
 template<>
@@ -107,10 +109,16 @@ struct Factory : AbstractFactory
         }
     }
 
+
     public:
     Factory(FactoryParameter<RecordType> p) 
         : param(p) 
     {}
+
+    inline static typename std::map<FactoryParameter<RecordType>, std::set<id_t>> 
+    get_idmap() {
+        return idmap;
+    }
 
 
     /*  When the unique factory instance stored in a subscriber (via Base_subscriber) is destroyed
@@ -130,20 +138,13 @@ struct Factory : AbstractFactory
         }
     }
 
+
     virtual std::unique_ptr<AbstractSubscriber> 
     operator()(Config config) final {
         auto copy = std::make_unique<Factory<RecordType>>(*this);
         auto ptr = new Impl<RecordType>(config, std::move(copy));
 
         return std::unique_ptr<AbstractSubscriber>(ptr);
-    }
-
-
-    // TODO if we continue with this approach, we will eventually need to implement a base 
-    // class covering both ::view and ::sparse_view, for the case of Info::infoset_t subscribers
-    virtual typename ts<RecordType>::view
-    get_iterator(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {
-        return get_iterator_helper<RecordType>(m, tp, this->param);
     }
 
     // Make this factory instance the unique instance associated with/stored in 
@@ -169,23 +170,31 @@ struct Factory : AbstractFactory
         }
     }
 
+    // TODO if we continue with this approach, we will eventually need to implement a base 
+    // class covering both ::view and ::sparse_view, for the case of Info::infoset_t subscribers
+    virtual typename ts<RecordType>::view
+    get_iterator(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {
+        return get_iterator_helper<RecordType>(m, tp, this->param);
+    }
+
+
     virtual bool wait(const timepoint_t& tp) {
         return wait_matching(this->param, tp);
     }
 
     // wait for all subscribers which have our parameter
-    static bool wait_matching(FactoryParameter<RecordType> x, const timepoint_t& tp) {
+    // See AbstractSubscriber::wait
+    static bool wait_matching(FactoryParameter<RecordType> x, const std::optional<timepoint_t> tp) {
         auto idmap = Factory<RecordType>::idmap;
         auto it = idmap.find(x);
 
         if (it == idmap.end()) {
             return false;
         } else {
-            std::for_each(idmap.begin(), idmap.end(), [](auto pair) {
+            std::for_each(idmap.begin(), idmap.end(), [&tp](auto pair) {
                 auto idset = pair.second;
-                std::for_each(idset.begin(), idset.end(), [](id_t id) {
-                    
-                    // TODO 
+                std::for_each(idset.begin(), idset.end(), [&tp](id_t id) {
+                    Subscribers::wait(id, tp);
                 });
             });
         }

@@ -96,7 +96,7 @@ void to_json(json& j, const EndpointConfig c) {
 }
 
 
-void from_json(const json& j, FactoryParameter<AgentAction>& x) {
+void from_json(const json& j, FactoryParameter<Agent::AgentAction>& x) {
     j.at("id").get_to(x.id);
 }
 void from_json(const json& j, FactoryParameter<price_t>& x) {
@@ -121,7 +121,7 @@ void to_json(json& j, const Subscribers::list_entry_t x) {
 // static initialization
 
 
-template<> std::map<FactoryParameter<AgentAction>, std::set<id_t>> Factory<AgentAction>::idmap = {};
+template<> std::map<FactoryParameter<Agent::AgentAction>, std::set<id_t>> Factory<Agent::AgentAction>::idmap = {};
 template<> std::map<FactoryParameter<price_t>, std::set<id_t>> Factory<price_t>::idmap = {};
 
 std::unordered_map<EndpointConfig, std::shared_ptr<Endpoint>, EndpointConfig::Key> 
@@ -133,15 +133,19 @@ Endpoints::endpoints;
 
 Endpoint::Endpoint(EndpointConfig c) 
     :   config(c), socket(this->io_context),
-        endpoint(c.remote_addr, c.remote_port)
+        endpoint(c.remote_addr, c.remote_port),
+        emitted(0)
 {
    socket.open(asioudp::v4());
 }
 
 void Endpoint::emit(std::unique_ptr<json> j) {
     std::string s(j->dump());
+    ++this->emitted;
     socket.send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
 }
+
+
 
 uintmax_t Subscribers::update(std::shared_ptr<Market::Market> m, const timepoint_t& tp) {
     std::lock_guard L { Subscribers::it_mtx };
@@ -183,10 +187,7 @@ uintmax_t Subscribers::update(std::shared_ptr<Market::Market> m, const timepoint
 
 
 std::variant<id_t, std::string>
-Subscribers::add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair) {
-    auto factory = pair.first;
-    auto config = pair.second;
-
+Subscribers::add(std::shared_ptr<AbstractFactory> factory, Config config) {
     try {
         auto s_ptr = (*factory)(config);
 
@@ -197,17 +198,6 @@ Subscribers::add(std::pair<std::shared_ptr<AbstractFactory>, Config> pair) {
         Subscribers::idmap.insert({ id, std::move(s_ptr) });
         VLOG(5) << "added subscriber with ID " << id.to_string();
 
-        EndpointConfig& ec = config.endpoint;
-        auto it = Endpoints::endpoints.find(ec);
-
-        if (it == Endpoints::endpoints.end()) {
-            VLOG(7) << "creating new endpoint for subscriber with ID=" << id.to_string();
-
-            std::shared_ptr<Endpoint> endpoint(new Endpoint(ec));
-            Endpoints::endpoints.insert({ ec, endpoint });
-        } else {
-            VLOG(7) << "using existing endpoint for subscriber with ID=" << id.to_string();
-        }
 
         return id;
     } catch (std::exception& e) {
@@ -223,7 +213,7 @@ Subscribers::add(std::deque<std::pair<std::shared_ptr<AbstractFactory>, Config>>
 
     // get id from instance and return 
     for (auto& pair : c) {
-        ret.push_back(Subscribers::add(pair));
+        ret.push_back(Subscribers::add(pair.first, pair.second));
     }
 
     return ret;
@@ -356,12 +346,25 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 AbstractSubscriber::AbstractSubscriber(Config& c)
     : config(c), id(id_t {}) 
 {
+    EndpointConfig& ec = c.endpoint;
+    auto it = Endpoints::endpoints.find(ec);
+
+    if (it == Endpoints::endpoints.end()) {
+        VLOG(7) << "creating new endpoint for subscriber with ID=" << this->id.to_string();
+
+        this->endpoint = std::shared_ptr<Endpoint>(new Endpoint(ec));
+        Endpoints::endpoints.insert({ ec, this->endpoint });
+        // the shared_ptr now has use_count of 2
+    } else {
+        VLOG(7) << "using existing endpoint for subscriber with ID=" << this->id.to_string();
+        this->endpoint = it->second;
+    }
 }
 
 AbstractSubscriber::~AbstractSubscriber() {
     auto& config = this->endpoint->config;
 
-    // if our copy of the endpoint is the only one remaining (aside from the container), 
+    // if our copy of the endpoint is the only one remaining (aside from the copy in Endpoints)
     // delete it from the main container
     if (this->endpoint.use_count() == 2) {
         auto it = Endpoints::endpoints.find(config);
@@ -394,8 +397,8 @@ ts<price_t>::view get_iterator_helper(
 }
 
 template<>
-ts<AgentAction>::view get_iterator_helper(
-    std::shared_ptr<Market::Market> m, const timepoint_t& tp, FactoryParameter<AgentAction> p)
+ts<Agent::AgentAction>::view get_iterator_helper(
+    std::shared_ptr<Market::Market> m, const timepoint_t& tp, FactoryParameter<Agent::AgentAction> p)
 {
     return m->agent_action_iterator(tp, p.id);
 }

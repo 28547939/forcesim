@@ -78,11 +78,14 @@ void from_json(const json& j, numeric_id<subscriber_numeric_id_tag>& id) {
 }
 
 
-void to_json(json& j, const AgentAction act) {
-    j = json();
-    j["direction"] = json(act.direction == Direction::UP ? "UP" : "DOWN");
-    j["internal_force"] = json(act.internal_force);
-}
+namespace Agent {
+
+    void to_json(json& j, const AgentAction act) {
+        j = json();
+        j["direction"] = json(act.direction == Direction::UP ? "UP" : "DOWN");
+        j["internal_force"] = json(act.internal_force);
+    }
+};
 
 /*
 currently not relying on this for incoming Agent configuration - better to check 

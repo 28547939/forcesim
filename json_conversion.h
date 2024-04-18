@@ -5,7 +5,7 @@
 #include <functional>
 
 #include <nlohmann/json.hpp>
-#include "Agent.h"
+#include "Agent/Agent.h"
 #include "Market.h"
 
 
@@ -49,8 +49,9 @@ namespace Market {
 
 //namespace Subscriber {};
 // converters for the Subscriber namespace are in Subscriber.h/Subscriber.cpp
-
+namespace Agent {
 void to_json(json& j, const AgentAction act);
+};
 
 void to_json(json& j, const numeric_id<market_numeric_id_tag> id);
 void to_json(json& j, const numeric_id<subscriber_numeric_id_tag> id);
