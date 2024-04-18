@@ -16,7 +16,7 @@ set ( forcesim_SRCS
 	Subscriber/implementation.cpp
 	Market.cpp
 	Interface.cpp
-	Agent.cpp
+	Agent/Agent.cpp
 )
 
 add_subdirectory(
@@ -25,12 +25,13 @@ add_subdirectory(
 
 link_libraries ( glog::glog -lboost_program_options -L${INCLUDE_PREFIX}/lib )
 
-add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
+#add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
 #add_executable ( test-interface ${forcesim_SRCS} tests/interface.cpp )
-add_executable ( test-agent Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/agent.cpp )
+add_executable ( test-agent Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/agent.cpp )
+add_executable ( test-subscriber Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/subscriber.cpp )
 add_executable ( test-ts tests/ts.cpp )
 add_executable ( test-timepoint tests/timepoint.cpp )
-add_executable ( v2-dist-points Agent.cpp json_conversion.cpp tests/v2_dist_points.cpp )
+add_executable ( v2-dist-points Agent/Agent.cpp json_conversion.cpp tests/v2_dist_points.cpp )
 
 
 

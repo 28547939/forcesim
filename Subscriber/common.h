@@ -16,6 +16,7 @@
 #include <thread>
 #include <variant>
 #include <queue>
+#include <unordered_map>
 #include <memory>
 
 
@@ -59,6 +60,16 @@ struct EndpointConfig {
     asio::ip::address remote_addr;
     int remote_port;
 
+    EndpointConfig(std::string addr_str, int port) 
+        :   remote_addr(asio::ip::make_address(addr_str)),
+            remote_port(port)
+    {}
+
+    EndpointConfig(asio::ip::address addr, int port) 
+        :   remote_addr(addr),
+            remote_port(port)
+    {}
+
     bool operator==(const EndpointConfig& e) const {
         return 
             e.remote_addr.to_string() == this->remote_addr.to_string()
@@ -72,13 +83,14 @@ struct EndpointConfig {
                 e.remote_addr.to_string() + std::to_string(e.remote_port)
             );
         }
-
     };
 };
 
 inline std::ostream& operator<<(std::ostream& os, const EndpointConfig& c) {
     return os << (c.remote_addr.to_string() + ":" + std::to_string(c.remote_port));
 }
+
+class Endpoints;
 
 
 struct Endpoint {
@@ -87,6 +99,7 @@ struct Endpoint {
     protected:
     asioudp::socket socket;
     asioudp::endpoint endpoint;
+    std::size_t emitted;
 
     public:
     EndpointConfig config;
@@ -94,6 +107,7 @@ struct Endpoint {
     Endpoint(EndpointConfig c);
     void emit(std::unique_ptr<json> j);
 
+    friend class Endpoints;
 };
 
 // *************************
@@ -155,8 +169,32 @@ struct Endpoints {
     static std::unordered_map<EndpointConfig, std::shared_ptr<Endpoint>, 
         EndpointConfig::Key> endpoints;
 
+
     friend class AbstractSubscriber;
     friend class Subscribers;
+
+    typedef std::unordered_map<EndpointConfig, std::pair<std::size_t, std::size_t>, EndpointConfig::Key>
+    descret_t;
+
+    public:
+    // EndpointConfig maps to (total emitted, refcount)
+    static inline descret_t
+    describe() {
+        descret_t ret;
+
+        std::transform(endpoints.begin(), endpoints.end(), std::inserter(ret, ret.end()),
+        [](auto&& pair) -> descret_t::value_type {
+            
+            return {
+                pair.first, 
+                {
+                    pair.second->emitted,
+                    pair.second.use_count()
+                }
+            };
+        });
+        return ret;
+    }
 };
 
 
