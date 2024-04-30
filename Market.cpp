@@ -65,6 +65,9 @@ void Market::main_loop() {
         // set by op_t::SHUTDOWN
         // either set during `op` execution at the end of this loop, or possibly by 
         // another thread (such as in Market::start)
+        // for now, we don't modify the Market's internal memory at all - not even to 
+        //  change our state from RUNNING to PAUSED
+        //  later on, we could decide to clean everything up during shutdown.
         if (this->shutdown_signal == true) {
             return;
         }

@@ -1,7 +1,7 @@
 
-
 #include "Market.h"
 #include "Agent/Agent.h"
+#include "Subscriber/Subscriber.h"
 #include "Subscriber/Subscribers.h"
 #include "Subscriber/Factory.h"
 #include "Interface.h"
@@ -15,9 +15,19 @@
 #include <thread>
 
 #include "json_conversion.h"
+#include "Subscriber/json_conversion.h"
 
 #include <asio.hpp>
 #include <boost/program_options.hpp>
+
+/*
+#ifdef __FreeBSD__
+#include <sys/thr.h>
+#endif
+#ifdef __linux__
+#include <pthread.h>
+#endif
+*/
 
 
 namespace {
@@ -62,6 +72,9 @@ namespace po = boost::program_options;
 // => verbose loglevel is intended to help diagnose any errors
 // TODO currently, glog is not recognizing the --v flag properly, so using --glog-verbosity instead
 
+using fc = forcesim_component;
+
+
 struct forcesim_client {
     std::map<enum forcesim_component, std::thread> threads;
 
@@ -76,6 +89,8 @@ struct forcesim_client {
     std::optional<std::shared_ptr<Interface>> interface;
 
     const std::set<enum forcesim_component> components;
+
+    //std::string proctitle;
 
     forcesim_client(std::set<enum forcesim_component> _components) 
         :   options_desc("forcesim CLI options"),
@@ -107,6 +122,12 @@ struct forcesim_client {
     void
     parse_cli(int argc, const char* const argv[]) {
         google::InitGoogleLogging(argv[0]);
+
+        //this->proctitle = argv[0];
+        //for (int i = 1; i < argc; i++) {
+        //    this->proctitle += " ";
+        //    this->proctitle += argv[i];
+        //}
 
         try {
             po::parsed_options opt = po::command_line_parser(argc, argv)
@@ -179,7 +200,7 @@ struct forcesim_client {
 
         for (auto c : this->components) {
             if (this->threads.find(c) != this->threads.end()) {
-                LOG(ERROR) << "Thread for " 
+                LOG(FATAL) << "Thread for " 
                     << forcesim_component_str(c) << " already exists" << std::endl;
             }
         }
@@ -188,7 +209,9 @@ struct forcesim_client {
 
             this->market = std::make_shared<Market::Market>();
             auto market_v = this->market.value();
-            market_v->launch();
+            this->threads[fc::Market] = market_v->launch();
+            //this->proctitle(this->threads[fc::Market], fc::Market)
+
 
             market_v->configure({
                 this->options_vm["iter-block"].as<int>()
@@ -196,26 +219,27 @@ struct forcesim_client {
 
         }
 
-        if (components.contains(forcesim_component::Subscribers)) {
+        if (components.contains(fc::Subscribers)) {
 
             Subscriber::Subscribers::manager_thread_poll_interval.store(
                 this->options_vm["subscriber-poll-interval"].as<int>()
             );
 
-            this->threads.insert({ 
-                forcesim_component::Subscribers, 
+            this->threads[fc::Subscribers] = 
                 std::thread([this]() {
 
                     Subscriber::Subscribers::launch_manager_thread(
                         this->options_vm["subscriber-max-records"].as<int>()
                     );
 
-                    VLOG(5) << "Subscriber manager thread exiting";
+                    VLOG(5) << "Subscriber manager thread exited";
                 })
-            });
+            ;
+            // currently not going to bother with this
+            //this->thread_title(this->threads[fc::Subscribers], fc::Subscribers);
         }
 
-        if (components.contains(forcesim_component::Interface)) {
+        if (components.contains(fc::Interface)) {
 
             if (this->market.has_value()) {
 
@@ -227,7 +251,7 @@ struct forcesim_client {
                 int listen_port = this->options_vm["interface-port"].as<int>();
 
 
-                auto t2 = std::thread([this, listen_addr, listen_port]() {
+                this->threads[fc::Interface] = std::thread([this, listen_addr, listen_port]() {
                     auto i = Interface::get_instance(this->market.value());
                     this->interface = i;
 
@@ -243,37 +267,35 @@ struct forcesim_client {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
             if (shutdown_signal == true) {    
-                Subscriber::Subscribers::shutdown_signal.store(true);
-
+                if (this->threads.contains(fc::Subscribers)) {
+                    Subscriber::Subscribers::shutdown(std::move(this->threads[fc::Subscribers]));
+                    this->threads.erase(fc::Subscribers);
+                }
                 if (this->interface.has_value()) {
                     this->interface.value()->stop();
                 }
-
                 if (this->market.has_value()) {
-
                     this->market.value()->queue_op(
                         std::shared_ptr<Market::op<Market::op_t::SHUTDOWN>> { 
                             new Market::op<Market::op_t::SHUTDOWN> {} 
                         }
                     );
-
                 }
-
-
-                LOG(INFO) << "Signal received, shutting down\n";
+                LOG(INFO) << "Shutdown complete, waiting for threads\n";
                 break;
             }
         }
 
         for (auto& [component, thr] : this->threads) {
             thr.join();
+            LOG(INFO) << "component thread exited: " << forcesim_component_str(component);
         }
 
         VLOG(2) << "exiting\n";
     }
 
     void exit(int code) {
-        exit(code);
+        std::exit(code);
     }
 
 };

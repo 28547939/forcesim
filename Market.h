@@ -342,11 +342,18 @@ class Market : public std::enable_shared_from_this<Market> {
         // timepoint_t argument is the latest point in time (inclusive) that we will 
         // try to wait; std::nullopt is returned if we 'timed out' waiting beyond this
         // threshold
+        //
+        // currently, we also return if the Market shuts down while we're waiting, even
+        //  if it hasn't entered the PAUSED state
         std::optional<timepoint_t> 
         wait_for_pause(const std::optional<timepoint_t>& tp) {
             using namespace std::chrono_literals;
             std::unique_lock L { this->api_mtx, std::defer_lock };
             while ( (tp.has_value() ? this->timept <= tp : true) ) {
+                if (this->shutdown_signal == true) {
+                    return std::nullopt;
+                }
+
                 L.lock();
                 if (this->state == state_t::PAUSED) {
                     return this->timept;

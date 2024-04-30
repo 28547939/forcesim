@@ -14,8 +14,8 @@ endif()
 set ( forcesim_SRCS
 	json_conversion.cpp
 	Subscriber/implementation.cpp
-	Market.cpp
 	Interface.cpp
+	Market.cpp
 	Agent/Agent.cpp
 )
 
@@ -25,7 +25,7 @@ add_subdirectory(
 
 link_libraries ( glog::glog -lboost_program_options -L${INCLUDE_PREFIX}/lib )
 
-#add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
+add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
 #add_executable ( test-interface ${forcesim_SRCS} tests/interface.cpp )
 add_executable ( test-agent Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/agent.cpp )
 add_executable ( test-subscriber Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/subscriber.cpp )

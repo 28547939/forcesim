@@ -1,3 +1,6 @@
+#ifndef AGENTFACTORY_H
+#define AGENTFACTORY_H
+
 #include "Agent.h"
 
 
@@ -31,7 +34,7 @@ factory_generator() {
     };
 }
 
-factory_map_t agent_factory {
+inline factory_map_t factory {
     factory_generator<AgentType::Trivial>(),
     factory_generator<AgentType::BasicNormalDist>(),
     factory_generator<AgentType::ModeledCohort_v1>(),
@@ -49,3 +52,5 @@ factory_map_t agent_factory {
 };
 
 };
+
+#endif
