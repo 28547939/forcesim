@@ -41,6 +41,14 @@ class Subscribers {
     static inline std::recursive_mutex 
     it_mtx;
 
+    static inline std::atomic<bool> 
+    shutdown_signal;
+    static inline std::mutex 
+    shutdown_cv_mtx;
+    static inline std::condition_variable 
+    shutdown_cv;
+
+
     public:
 
     //  milliseconds between scans over the subscriber map (idmap member in this class), to check 
@@ -48,7 +56,6 @@ class Subscribers {
     //      the program can change the poll interval during runtime by modifying this variable 
     static inline std::atomic<int> manager_thread_poll_interval;
 
-    static inline std::atomic<bool> shutdown_signal;
 
     // call update on all the subscribers
     static uintmax_t update(std::shared_ptr<Market::Market>, const timepoint_t&);
@@ -99,6 +106,9 @@ class Subscribers {
     // max_record_split is the maximum number of records that should be included in a single JSON
     //  conversion (UDP message)
     static void launch_manager_thread(int max_record_split);
+
+    // finish processing all Subscriber records and prepare for program termination
+    static void shutdown(std::thread);
 };
 
 

@@ -44,7 +44,7 @@ enum class subscriber_flag_t {
     // this is set to false when Base_subscriber::update processes new records and makes them 
     //  available to be emitted
     // this is set to true when all the currently processed records have been converted, removed
-    //  from the deque of processed records, and ready to be emitted to the consumer / UDP endpoint
+    //  from the container of processed records, and ready to be emitted to the consumer / UDP endpoint
     // this flag is also used to keep track of when to add a trailing empty record
     //  at the end of the JSON to be emitted, to signal to the consumer that all records have been
     //  processed
@@ -69,6 +69,9 @@ struct EndpointConfig {
         :   remote_addr(addr),
             remote_port(port)
     {}
+
+    // JSON conversion library requires the type to be default-constructible
+    EndpointConfig() = default;
 
     bool operator==(const EndpointConfig& e) const {
         return 

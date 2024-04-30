@@ -190,14 +190,11 @@ std::variant<id_t, std::string>
 Subscribers::add(std::shared_ptr<AbstractFactory> factory, Config config) {
     try {
         auto s_ptr = (*factory)(config);
-
         auto id = s_ptr->id;
-
-        s_ptr->flags({{ subscriber_flag_t::Flushed }});
+        s_ptr->set_flags({ subscriber_flag_t::Flushed }, true);
 
         Subscribers::idmap.insert({ id, std::move(s_ptr) });
         VLOG(5) << "added subscriber with ID " << id.to_string();
-
 
         return id;
     } catch (std::exception& e) {
@@ -225,20 +222,20 @@ Subscribers::del(id_t id, bool sync) {
     using Ss = Subscribers;
     std::lock_guard L { Ss::it_mtx };
     auto it = Ss::idmap.find(id);
-
     if (it == Ss::idmap.end()) {
         return Ss::delete_status_t::DOES_NOT_EXIST;
     }
+    auto& s = it->second;
 
-    if (sync == true) {
-        (it->second)->wait_flag(subscriber_flag_t::Flushed);
-    }
-
-    // the subscriber's pending_records_count is an atomic type
-    if ((it->second)->pending_records_count > 0) {
-        (it->second)->flags({{ subscriber_flag_t::Dying }});
+    if (s->pending_records_count() > 0 && sync == false) {
+        s->set_flags({ subscriber_flag_t::Dying }, true);
         return Ss::delete_status_t::MARKED;
     } else {
+
+        if (s->pending_records_count() > 0 && sync == true) {
+            s->wait_flag(subscriber_flag_t::Flushed);
+        }
+
         Ss::idmap.erase(it);
         return Ss::delete_status_t::DELETED;
     }
@@ -269,7 +266,7 @@ Subscribers::list() {
         os << s->config.endpoint;
         r.push_back({
             id,
-            s->pending_records_count,
+            s->pending_records_count(),
             os.str(),
             s->config.t
         });
@@ -283,9 +280,7 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
     std::unique_lock L { Subscribers::it_mtx, std::defer_lock };
     while (true) {
-
         L.lock();
-
         auto& idmap = Subscribers::idmap;
 
         if (Subscribers::shutdown_signal == true) {
@@ -293,19 +288,16 @@ void Subscribers::launch_manager_thread(int max_record_split) {
             return;
         }
 
-        //VLOG(9) << "about to check Subscribers::idmap with " << idmap.size() << " elements";
-
-
         // check if the subscriber has been marked with the Dying flag (for shutdown)
         // if so, flush its remaining records regardless of count and then destroy it
         auto is_dying = [](std::unique_ptr<AbstractSubscriber>& s) {
-            return s->flags().contains(subscriber_flag_t::Dying);
+            return s->get_flags().contains(subscriber_flag_t::Dying);
         };
 
         // 
         for (auto& [id,s] : idmap) {
 
-            if (s->pending_records_count > s->config.chunk_min_records || is_dying(s)) {
+            if (s->pending_records_count() > s->config.chunk_min_records || is_dying(s)) {
                 auto json_records = s->convert_pending(max_record_split);
 
                 auto endpoint = Endpoints::endpoints.find(s->config.endpoint);
@@ -320,7 +312,6 @@ void Subscribers::launch_manager_thread(int max_record_split) {
                     VLOG(9) << "emitted data from subscriber with ID=" << s->id.to_string();
                 }
             }
-
         };
 
         std::erase_if(idmap, [&is_dying](auto& item) {
@@ -329,16 +320,34 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 
         int poll_interval = manager_thread_poll_interval.load();
 
-        // if the poll_interval is changed to an invalid value, we stop permanently
-        // TODO - we could instead wait on a CV to restart
+        // if the poll_interval is changed to an invalid value, we exit
         if (poll_interval <= 0) {
+            VLOG(5) << "manager_thread exiting: poll_interval has been changed to a negative value";
             break;
         }
 
         L.unlock();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval));
+        // sleep for the poll_interval, but allow the possibility of wakeup in case of shutdown
+        std::unique_lock L { Subscribers::shutdown_cv_mtx };
+        Subscribers::shutdown_cv.wait_for(
+            L,
+            std::chrono::milliseconds(poll_interval),
+            []() {
+                return Subscribers::shutdown_signal.load();
+            }
+        );
     }
+}
+
+void Subscribers::shutdown(std::thread thread) {
+    for (auto& [id, s] : Subscribers::idmap) {
+        Subscribers::del(id, true);
+    }
+    Subscribers::shutdown_signal.store(true);
+    Subscribers::shutdown_cv.notify_one();
+
+    thread.join();
 }
 
 

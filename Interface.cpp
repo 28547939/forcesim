@@ -3,7 +3,8 @@
 // https://github.com/CrowCpp/Crow
 #include <crow.h>
 #include <nlohmann/json.hpp>
-#include "Agent.h"
+#include "Agent/Agent.h"
+#include "Agent/Factory.h"
 #include "Interface.h"
 #include "Subscriber/Subscriber.h"
 #include "Subscriber/Subscribers.h"
@@ -22,8 +23,6 @@
 using json = nlohmann::json;
 using namespace std;
 
-
-using namespace Agent;
 
 namespace {
     using namespace Subscriber;
@@ -60,7 +59,7 @@ namespace {
         std::function<std::shared_ptr<AbstractFactory>(json)>
     > subscriber_factory_factory = 
     {
-        subscriber_factory_factory_generator<AgentAction>(),
+        subscriber_factory_factory_generator<Agent::AgentAction>(),
         subscriber_factory_factory_generator<price_t>()
     };
 };
@@ -463,13 +462,13 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
     {
 
 
-        auto t_it = str_agenttype.find(spec.type);
+        auto t_it = Agent::str_agenttype.find(spec.type);
         std::optional<std::string> errstr;
 
-        if (t_it == str_agenttype.end()) {
+        if (t_it == Agent::str_agenttype.end()) {
             errstr = std::string("unknown agent type: "+ spec.type);
         } else {
-            AgentType t = t_it->second;
+            Agent::AgentType t = t_it->second;
             auto factory_element = Agent::factory.find(t);
 
             if (factory_element == Agent::factory.end()) {
@@ -479,7 +478,7 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
                 for (int i = 0; i < spec.count; i++) {
 
                     try {
-                        unique_ptr<Agent> agent = (factory_element->second)(spec.config);
+                        unique_ptr<Agent::Agent> agent = (factory_element->second)(spec.config);
                         ids.push_back(interface->market->add_agent(std::move(agent)));
                     } 
                     // something wrong with a value in AgentConfig (spec.config)
@@ -683,8 +682,7 @@ void Interface::crow__add_subscribers(const crow::request& req, crow::response& 
             auto factory_factory = subscriber_factory_factory[config.t];
             std::shared_ptr<AbstractFactory> factory = factory_factory(c.parameter);
 
-            auto ret_deque = Subscriber::Subscribers::add({{ factory, config }});
-            auto entry = ret_deque.at(0);
+            auto ret = Subscriber::Subscribers::add(factory, config);
 
             return std::visit([](auto&& entry) -> list_ret_t<Subscriber::id_t> {
                 // cppreference.com
@@ -697,7 +695,7 @@ void Interface::crow__add_subscribers(const crow::request& req, crow::response& 
                     });
                 else
                     static_assert(false_helper<T>, "Unexpected type returned from Subscribers::add");
-            }, entry);
+            }, ret);
         
         } catch (json::exception& e) {
 

@@ -70,44 +70,42 @@ class AbstractSubscriber {
     // where `granularity` is the granularity specified in this->config.
     timepoint_t cursor;
 
-    // records which have been obtained by the subscriber but which await conversion and 
-    // emitting to the endpoint; the data structure holding the records is specific to the
+    // records which have been obtained by the subscriber but which await JSON conversion and release.
+    // the data structure holding the records is specific to the
     // template/subscriber type, but this count needs to be available to the program (which
     // only has access to this abstract type) to signal that the subscriber is ready to convert 
     // the records to JSON and release them.
-    std::atomic<uintmax_t> pending_records_count;
+    //std::atomic<uintmax_t> pending_records_count;
+    virtual uintmax_t pending_records_count() = 0;
 
     // reset the subscriber's cursor
     virtual void reset(const timepoint_t& t);
 
-    // manage flags set on this subscriber
-    std::set<enum subscriber_flag_t> 
-    flags(
-        std::optional<std::set<enum subscriber_flag_t>> flags_arg = std::nullopt,
-        // if true, use flags_arg to toggle; if false, only use flags_arg to add flags
-        bool toggle = true
-    ) {
-        std::lock_guard L { this->mtx }; 
-
-        if (flags_arg.has_value()) {
-            auto flags_arg_v = flags_arg.value();
-
-            if (toggle == true) {
-                std::erase_if(this->_flags, [&flags_arg_v](auto const& f) {
-                    if (flags_arg_v.contains(f)) {
-                        // facilitate further usage of flags_arg_v to add, instead of delete, flags
-                        flags_arg_v.erase(f);
-                        return true;
-                    }
-
-                    return false;
-                });
-            }
-
-            this->_flags.merge(flags_arg.value());
-        }
-
+    std::set<enum subscriber_flag_t>
+    get_flags() { 
         return this->_flags; 
+    }
+    void set_flags(std::set<enum subscriber_flag_t> flags_arg, bool value) {
+        if (value == true) {
+            this->_flags.merge(flags_arg);
+        } else {
+            std::erase_if(this->_flags, [&flags_arg](auto const& f) {
+                if (flags_arg.contains(f)) {
+                    return true;
+                }
+                return false;
+            });
+        }
+    }
+    void toggle_flags(std::set<enum subscriber_flag_t> flags_arg) {
+        std::erase_if(this->_flags, [&flags_arg](auto const& f) {
+            if (flags_arg.contains(f)) {
+                flags_arg.erase(f);
+                return true;
+            }
+            return false;
+        });
+        this->_flags.merge(flags_arg);
     }
     void reset_flags() { 
         std::lock_guard L { this->mtx };
@@ -115,12 +113,12 @@ class AbstractSubscriber {
     }
     // wait until a specific flag is set
     void wait_flag(enum subscriber_flag_t f) {
-        if (this->flags().contains(f)) {
+        if (this->_flags.contains(f)) {
             return;
         } else {
             std::unique_lock L(this->flags_cv_mtx);
             this->flags_cv.wait(L, [&f, this]() {
-                return this->flags().contains(f);
+                return this->_flags.contains(f);
             });
         }
     }
@@ -145,7 +143,8 @@ class AbstractSubscriber {
 
         this->wait_cv.wait(L, [t, this]() {
             // cursor represents next value to be read
-            return t.has_value() ? this->cursor - this->config.granularity >= t : true;
+            return this->pending_records_count() == 0 
+                && (t.has_value() ? this->cursor - this->config.granularity >= t : true);
         });
     }
 
@@ -187,13 +186,10 @@ class AbstractSubscriber {
                 break;
             }
         }
-
-        // TODO set value based on actual number of records processed, eg in case
-        // of exception
-        this->pending_records_count = 0;
-
-        // set Flushed flag
-        this->flags({{ subscriber_flag_t::Flushed }}, false);
+        if (this->pending_records_count() == 0) {
+            // set Flushed flag to true
+            this->set_flags({ subscriber_flag_t::Flushed }, true);
+        }
 
         return ret;
     }
@@ -201,6 +197,7 @@ class AbstractSubscriber {
     // Convert multiple remaining records, assembling them into a JSON object that
     //  is ready to be sent to an endpoint in its own packet (i.e. one packet/datagram per chunk)
     // Takes records from pending_records (see Base_subscriber, below)
+    //  convert_chunk is required to remove the records from pending_records even in the case of error
     virtual std::optional<std::unique_ptr<json>> 
     convert_chunk(int) = 0;
 
@@ -266,6 +263,12 @@ class Base_subscriber : public AbstractSubscriber {
         // destruction of this Base_subscriber instance will trigger the Factory instance's 
         //  destructor
         this->factory->associate(this->id);
+    }
+
+    uintmax_t
+    pending_records_count() {
+        std::lock_guard L { this->mtx };
+        return this->pending_records.size();
     }
 
     // this function is called by the Subscribers class manager thread
@@ -351,8 +354,6 @@ class Base_subscriber : public AbstractSubscriber {
             // caught in Subscribers::update
         }
 
-
-
         int new_pending_records = 0;
         try {
             auto live_cursor = this->factory->get_iterator(m, tp);
@@ -405,14 +406,11 @@ class Base_subscriber : public AbstractSubscriber {
         VLOG(9) << "subscriber updated " << new_pending_records << " records";
 
         // new_pending_records is positive (unless there were exceptions/empty entries in the loop)
-        // so there are definitely new records pending, and we are not in the 'flushed'
-        // state (regardless of whether we were to begin with)
-        // also: at this point, this subscriber is now completely up to date with new records.
         if (new_pending_records > 0) {
-            this->flags({{ subscriber_flag_t::Flushed }});
+            this->set_flags({ subscriber_flag_t::Flushed }, true);
 
             // conversion thread checks this 
-            this->pending_records_count += new_pending_records;
+            //this->pending_records_count += new_pending_records;
 
             // waiting threads can check if we have reached their specified timepoint
             this->wait_cv.notify_all();
