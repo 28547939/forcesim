@@ -66,6 +66,9 @@ inline void to_json(json& j, const enum InterfaceResponseType x) {
     j = interface_response_type_str[x];
 }
 
+
+// translate from the RetKey type present in the return value of a list request helper
+// to the possible return types indicated in the InterfaceResponseType enum
 template<typename RetKey>
 struct detect_multi_response_type {
     static const inline enum InterfaceResponseType value = InterfaceResponseType::Multiple_pairlist;
@@ -88,8 +91,8 @@ struct detect_multi_response_type<std::string> {
  * 
  * when an incoming request is a "multi-request", in the sense of providing a list an endpoint
  * interprets as a list of requests, there is a certain amount of boilerplate involved in the 
- * application of the endpoint's logic to each element (request) in that list and assembling the
- * results into a list (or more generally, a map, possibly with integer indices) for the response.
+ * application of the endpoint's logic to each element (request) in that list, or to the entire list
+ * and assembling the results into a list (or a map) for the response.
  * 
  * endpoint methods (Interface::crow__*) which support this call either list_generator_helper or 
  * list_handler_helper, which both call the main helper function, list_helper:
@@ -113,14 +116,18 @@ struct detect_multi_response_type<std::string> {
  *  template is specialized by HandlerType.
  *  
  * 
- * Currently, HandlerType can be one of:
+ * Currently, HandlerType (ie the type of callback provided by the endpoint method) can be one of:
  * - list_helper_generator_t (used by list_generator_helper)
  * - list_helper_handler_t (used by list_handler_helper)
  * 
  * list_generator_helper runs a function for each item in the input list, with the response list
- *  just being the list of return values from each invocation.
+ *  just being the list of return values from each invocation, and where the position of a response value
+ *  in that list corresponds to the position of the request value in the request list. (Multiple_barelist)
  * list_handler_helper runs the function once on the entire list, and populates the response list
- *  in whatever way it needs to.
+ *  in whatever way it needs to. (Multiple_pairlist or Multiple_stringmap)
+ * 
+ * 
+ * See the comments for 
  * 
  * TODO possibly rename HandlerType to HelperType for more consistent terminiology
   ******************************************************** */
@@ -137,18 +144,17 @@ using list_retmap_t = std::map<K, list_ret_t<V>>;
 template<typename InputItem, typename RetKey, typename RetVal, typename HandlerType>
 struct list_helper_adapter;
 
+// TODO update this
 // type of inner request handler which is executed (and returns a value) for each element 
 // in the list provided in the request
-// data structure returned to HTTP client is a 
-//  map<int, list_ret_t<RetVal>> ( = list_retmap_t<int>)
-// where each value in the map is the value returned from an individual invocation of the 
-//  handler
+// data structure returned to HTTP client is a Multiple_barelist, i.e.
+//  a list where each value is returned from an individual invocation of the handler,
+//  and where its position corresponds to the position in the request list
 template<typename InputItem, typename RetVal>
 using list_helper_generator_t = 
     std::function<list_ret_t<RetVal>(std::shared_ptr<Interface>, InputItem&)>;
 
 // specialization for list_helper_generator_t
-// TODO switch to allow returning items in their place in the array vs as map keys
 template<typename InputItem, typename RetKey, typename RetVal>
 struct list_helper_adapter<
     InputItem, RetKey, RetVal, 
@@ -271,19 +277,23 @@ class Interface : public std::enable_shared_from_this<Interface> {
         access the instance pointer (Interface::instance)
     */
 
-    // TODO usage documentation for each method
+    // TODO documentation of the overall return structure and the format for
+    // multiple return values 
 
     /*
         POST /market/run
+        {
+            "iter_count": (optional JSON integer value: number of iterations to run)
+        }
 
-        Returns:
+        Return data:
             null
     */
     static void crow__market_run(const crow::request& req, crow::response&);
     /*
         POST /market/pause
 
-        Returns:
+        Return data:
             null
         
         Errors:
@@ -295,7 +305,7 @@ class Interface : public std::enable_shared_from_this<Interface> {
             "timepoint": (optional JSON integer value of latest timepoint to wait before timing out)
         }
 
-        Returns:
+        Return data:
             {
                 "timepoint": (JSON integer value of timepoint when pause took place)
             }
@@ -312,17 +322,53 @@ class Interface : public std::enable_shared_from_this<Interface> {
     */
     static void crow__market_wait_for_pause(const crow::request&, crow::response&);
 
+    /*
+        POST /market/configure
+            <Market::Config>
+
+        Return data:
+            null
+    */
     static void crow__market_configure(const crow::request&, crow::response&);
+    
+
+    /*
+        POST /market/start
+
+        Return data:
+            null
+        
+        Errors:
+            Already_started
+    */
     static void crow__market_start(const crow::request& req, crow::response& resp);
-
-    static void crow__market_reset(const crow::request& req, crow::response& resp);
-
-    static void crow__get_price_history(const crow::request&, crow::response&);
-
 
 
     /*
+        POST /market/reset
+        
+        Return data:
+            null
+    */
+    static void crow__market_reset(const crow::request& req, crow::response& resp);
 
+
+    /*
+        GET /market/price_history
+        {
+            "erase": (required: whether to erase the history after returning it)
+        }
+
+        Return data:
+            <JSON object mapping timepoint values to floating-point price_t values>
+        
+        Errors:
+            General_error
+                (if the `erase` argument is missing)
+    */
+    static void crow__get_price_history(const crow::request&, crow::response&);
+
+    /*
         POST /agent/add
         [
             {   "type": (value of type enum AgentType)
@@ -331,23 +377,34 @@ class Interface : public std::enable_shared_from_this<Interface> {
             }
         ]
 
-        Returns: {
-            "timepoint": current Market::timept (timepoint_t) value, when the agents were created
-            "ids": [ 
-                list of IDs for each entry in the request
-            ]
-        }
+        Return data: 
+        Multiple_barelist
+        [ 
+            {
+                "ids": [ 
+                    (list of IDs created for this config (size = count parameter above))
+                ]
+            }
+        ]
+
+        Errors:
+        Agent_config_error
+            (missing value from the config or some other error during agent creation)
     */
     static void crow__add_agents(const crow::request&, crow::response&);
 
 
 	/*
-		POST /agent/del
+		POST /agent/delete
 		[ id1, id2, ... ]
 
-		Returns: {
-            id: (bool value - whether the deletion was successful)
-        }
+		Return data: 
+        Multiple_pairlist   (numeric agent ID -> 
+                                (bool) whether successfully deleted
+                            )
+
+        Errors:
+        Not_found "agent not found"
 
 	*/
     static void crow__del_agents(const crow::request&, crow::response&);
@@ -356,79 +413,133 @@ class Interface : public std::enable_shared_from_this<Interface> {
 
 	/*
 		GET /agent/list
-
-        Optional parameter: timepoint (show only agents created at the given timepoint_t value)
 		
-        Returns: more or less, map<timepoint_t, deque<Market::AgentRecord>> in JSON form
+        Return data: 
+            map<timepoint_t, deque<Market::AgentRecord>> in JSON form
 	*/
     static void crow__list_agents(const crow::request&, crow::response&);
 
     /*
         POST /agent/get_history
-        { "id": ... }
+        { 
+            "id": (integer agentid_t)
+        }
 
-        Returns 
-        {   "id": ...,
+        Returns data:
+        {   "id": (integer agentid_t)
             "history": (map<timepoint_t, AgentAction> in JSON form)
         }
     */
     static void crow__get_agent_history(const crow::request&, crow::response&);
 
     /*
-        POST /agent/del_history
-        { "id": ... }
+        TODO unimplemented
 
-        Returns  TODO
-        {   "id": ...,
+        POST /agent/del_history
+        { 
+            "id": (integer agentid_t)
+        }
+        
+
+        Return data:
+        {   
+            "id": (integer agentid_t),
+            "count": (integer number of entries deleted)
         }
     */
     static void crow__delete_agent_history(const crow::request&, crow::response&);
 
     /*
         POST /info/emit
+        (list of Info objects to be included in an Infoset_t)
         [
             {   "type": (string representation of value of type enum Info::Types),
                 "data": (JSON to be converted to an Info subclass, not including the `type` member)
             }
         ]
+
+        Return data:
+        {
+            "timepoint": (integer timepoint when the Infoset_t was emitted)
+        }
+
+        Errors:
+        Json_parse_error (if Info objects couldn't be parsed)
+        General_error (if Market::emit_info encountered an error)
+        
     */
     static void crow__emit_info(const crow::request&, crow::response&);
 
     /* 
         POST /subscribers/add
         [
-            { "config": { ... }, "parameter": ... }
+            { 
+                "config": { ... }, 
+                "parameter": ... 
+            }
         ]
 
-        Returns list<pair<int, variant<int, string> >> in JSON form:
-            a mapping in list form from the integer index of a config object in the request
-            to the resulting Subscriber::id_t (or the error produced)
+        Return data:
+        Multiple_barelist
+        [
+            (integer Subscriber::Id_t in JSON form)
+        ]
+
+        Errors:
+        Subscriber_config_error
+            if a JSON error occurred or the provided configuration is invalid
+        General_error
+            error encountered while adding the Subscriber with Subscribers::add    
         
     */
     static void crow__add_subscribers(const crow::request&, crow::response&);
 
     /*
         POST /subscribers/delete
-        [ (list of IDs to delete) ]
+        [ 
+            (integer subscriber IDs to delete)
+        ]
 
-        Returns
+        Return data:
+        Multiple_pairlist
         [
-            (true or string explaining error, for each provided ID)
+            [   (integer Subscriber::id_t),
+                (true or string explaining error)
+            ]
         ]
     */
     static void crow__del_subscribers(const crow::request&, crow::response&);
 
     /*
-        POST /subscribers/list
+        GET /subscribers/list
+
+        Return data:
+        [
+            Subscribers::list_entry_t in JSON form =
+            { 
+                id: Subscribers::id_t,
+                pending_records: integer
+                endpoint: string
+                record_type: string form of Subscribers::record_type_t enum
+            }
+        ]
+
     */
     static void crow__list_subscribers(const crow::request&, crow::response&);
 
-    static void crow__show_market_perf_data(const crow::request&, crow::response&);
-    static void crow__reset_market_perf_data(const crow::request&, crow::response&);
 
-    public:
-    static std::shared_ptr<Interface> get_instance(std::shared_ptr<Market::Market>);
-    static std::shared_ptr<Interface> get_instance();
+    /*
+        GET /market/showperf
+
+        map<string, map<timepoint_t, uintmax_t>> in JSON form
+        perf key -> map from timepoint of collection to value in ms
+    */
+    static void crow__show_market_perf_data(const crow::request&, crow::response&);
+
+    /*
+        POST /market/resetperf
+    */
+    static void crow__reset_market_perf_data(const crow::request&, crow::response&);
 
     json build_json(
         std::optional<enum InterfaceErrorCode> error_code, 
@@ -444,6 +555,11 @@ class Interface : public std::enable_shared_from_this<Interface> {
         std::optional<InterfaceResponseType> data_type = InterfaceResponseType::Data,
         std::optional<int> http_code = std::nullopt
     );
+
+    public:
+    static std::shared_ptr<Interface> get_instance(std::shared_ptr<Market::Market>);
+    static std::shared_ptr<Interface> get_instance();
+
 
     bool start(std::optional<asio::ip::address>, int);
     void stop();

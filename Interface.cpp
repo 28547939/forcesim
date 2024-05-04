@@ -273,8 +273,8 @@ void Interface::list_helper(
     );
     int error_count = error_keys.size();
 
+    // convert each list_ret_t value (which is a return value or an error) to JSON
     list_json_ret_t<RetKey> data_ret;
-
     for (auto& pair : retmap) {
         data_ret.add(pair.first, std::visit(
             //  this lambda is "polymorphic" and converts both possible types to 
@@ -495,9 +495,7 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
                             e.what()
                         });
                     }
-
                 }
-
                 return ids;
             }
         }
@@ -514,7 +512,6 @@ Interface::crow__add_agents(const crow::request& req, crow::response& res) {
 }
 
 void Interface::crow__del_agents(const crow::request& req, crow::response& res) {
-
     using agentid_t = Market::agentid_t;
 
     Interface::list_handler_helper<agentid_t, agentid_t, bool>

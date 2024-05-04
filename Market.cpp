@@ -54,8 +54,11 @@ Market::do_evaluate(
         access to its map holding the subscriber objects. That map is also accessed by the Market API 
         (via the Subscribers class), when adding/deleting subscribers, for example.
 
-    - 
+    - We check for any pending `op`s on the op_queue
 
+    After no more iterations remain:
+
+    - We wait for incoming `op`s on the op_queue
 */
 void Market::main_loop() {
     std::unique_lock L_op { this->op_queue_mtx, std::defer_lock };
@@ -354,9 +357,7 @@ void Market::main_loop() {
 
 
 /******************************************
- * 
  *  API 
- * All of these methods lock this->api_mtx
 */
 
 ts<Agent::AgentAction>::view 
@@ -400,8 +401,6 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
 }
 
 
-
-
 void 
 Market::queue_op(std::shared_ptr<op_abstract> op) {
     const std::lock_guard<std::mutex> lock(this->op_queue_mtx);
@@ -423,10 +422,8 @@ Market::configure(Config c) {
 
 void
 Market::start() {
-    /*
     if (this->started == true)
         throw std::logic_error("Market::start should only be called once");
-        */
 
     if (this->configured == false) {
         this->configure({
@@ -436,17 +433,11 @@ Market::start() {
 
     // check for any "ops" which may have been queued before start
     this->op_execute_helper();
-
-
     this->queue_op(
         std::shared_ptr<op<op_t::START>> { 
             new op<op_t::START> {} 
         }
     );
-
-    //this->started.store(true);
-
-    //this->start_sem.release();
 }
 
 
