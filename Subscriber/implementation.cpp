@@ -341,9 +341,11 @@ void Subscribers::launch_manager_thread(int max_record_split) {
 }
 
 void Subscribers::shutdown(std::thread thread) {
+    std::deque<id_t> ids;
     for (auto& [id, s] : Subscribers::idmap) {
-        Subscribers::del(id, true);
+        ids.push_back(id);
     }
+    Subscribers::del(ids, true);
     Subscribers::shutdown_signal.store(true);
     Subscribers::shutdown_cv.notify_one();
 
