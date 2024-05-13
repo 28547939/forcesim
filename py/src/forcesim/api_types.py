@@ -50,19 +50,19 @@ class subscriber_type_t(MyEnum):
 
 
 def str_to_agentclass(s : str) -> agentclass_t:
-    return agentclass_t.__getattr__(s)
+    return agentclass_t.__getitem__(s)
 
 def str_to_subscriber_type(s : str) -> subscriber_type_t:
-    return subscriber_type_t.__getattr__(s)
+    return subscriber_type_t.__getitem__(s)
 
 def str_to_infotype(s : str) -> infotype_t:
-    return infotype_t.__getattr__(s)
+    return infotype_t.__getitem__(s)
 
 def str_to_error_code(s : str) -> error_code_t:
-    return error_code_t.__getattr__(s)
+    return error_code_t.__getitem__(s)
 
 def str_to_response_type(s : str) -> response_type_t:
-    return response_type_t.__getattr__(s)
+    return response_type_t.__getitem__(s)
 
 
 #@dataclass(kw_only=True)
