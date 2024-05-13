@@ -366,7 +366,6 @@ class Market : public std::enable_shared_from_this<Market> {
             return std::nullopt;
         }
 
-
         // TODO account for possible exception thrown by ts constructor
         agentid_t 
         add_agent(std::unique_ptr<Agent::Agent>);
