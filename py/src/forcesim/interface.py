@@ -35,7 +35,9 @@ class AgentRecord():
     id : int
 
 class interface_ret():
-    def __init__(self, url, req_data, resp, json, text, msg=None, data_type=None, data=None):
+    def __init__(self, url, req_data, resp, json, text,  \
+        msg=None, data_type=None, data=None, error_keys=None):
+
         self.url=url
         self.req_data=req_data
         self.resp = resp 
@@ -44,6 +46,7 @@ class interface_ret():
         self.msg = msg 
         self.data = data
         self.data_type = data_type
+        self.error_keys=error_keys
 
     def __str__(self):
         x=pprint.PrettyPrinter()
@@ -55,6 +58,23 @@ class Error(interface_ret):
     def __init__(self, error_code, *args, **kwargs):
         self.code=error_code
         super().__init__(*args, **kwargs)
+
+    def get_multiple(self) -> Tuple[Any, Tuple[error_code_t, str]]:
+        # TODO use typing.assert_type - Python 3.11
+        if isinstance(self.data, list):
+            for i in range(0, len(self.data)):
+                if self.error_keys is not None and k in self.error_keys:
+                    if isinstance(self.data[i], tuple):
+                        yield self.data[i]  
+                    else:
+                        yield (i, *(self.data[i]))
+        elif isinstance(self.data, dict):
+            for k, v in self.data.items():
+                if self.error_keys is not None and k in self.error_keys:
+                    yield (k, *v)
+
+        
+
 
 
 """
@@ -157,8 +177,13 @@ class Interface():
     perform some minimal interpretation/processing of the raw response 
     structure to make it easier for the client program to detect errors
     and process the data
+
+    Methods in Interface will use _ok_or_raise on the return value of _process_response, 
+    either returning an Ok value or raising an exception with type ErrorResponseException.
+    If an error is encountered during the actual handling/processing of the response, a
+    ResponseIntegrityException is raised instead
     """
-    async def _process_response(self, url, data, resp):
+    async def _process_response(self, url, data, resp) -> interface_ret:
 
         resp_text = await resp.text()
         # for generate_exception closure - it gets set in the try-catch below
@@ -227,6 +252,8 @@ class Interface():
                 raise generate_exception(
                     message='error response with data_type of Multiple_* requires error code Multiple'
                 )
+        else:
+            error_keys=None
 
         if data_type == response_type_t.Data:
             data_processed=data
@@ -302,7 +329,7 @@ class Interface():
 
         if error_code is not None:
             return Error(error_code, url, data, resp, resp_json, 
-            resp_text, message, data_type, data=data_processed)
+            resp_text, message, data_type, data=data_processed, error_keys=error_keys)
         else:
             return Ok(url, data, resp, resp_json, resp_text, message, 
             data_type, data=data_processed)

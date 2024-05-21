@@ -1,11 +1,6 @@
-from datetime import date
-
 import matplotlib.pyplot as plt
-
 from typing import List, Tuple, Any, Optional, Dict
-
 from dataclasses import dataclass, asdict
-from enum import Enum, auto
 
 import json
 
@@ -36,6 +31,7 @@ class Graph():
         self._output_path=output_path
         self._is_animated=is_animated
 
+
         self._settings=Graph.actual_defaultdict(dict(
             linewidth=0.25,
             dpi=600,
@@ -62,8 +58,7 @@ class Graph():
         if len(kwargs) == 0:
             return self._settings
         else:
-            for (k, v) in kwargs.items():
-                self._settings[k]=v 
+            self._settings.update(kwargs)
 
 
     def image_to_file(self, path=None):
@@ -95,7 +90,7 @@ class Graph():
 """
 TODO listener multiplexing
 Subscribers which use a parameter (currently just AGENT_ACTION, but in general, most likely 
-any subscriber type aside from PRICE) will require mutliplexing if we allow the same
+any subscriber type aside from PRICE) will require multiplexing if we allow the same
 UDP endpoint to be shared among distinct parameters (that is, distinct logical Subscribers)
 In particular there will be a distinct Subscriber+Listener pair of instances for each 
 distinct parameter value (eg agent ID), with an adapter class which de-multiplexes
@@ -191,8 +186,6 @@ class Subscriber():
 
         client needs to activate the listener (so that it passes data to the hook) and
         activate the graph (so that it appears on screen)
-
-        TODO how to manage destruction
         """
 
         self._interface=i
@@ -218,9 +211,9 @@ class Subscriber():
                         ret[0][1], self._config
                     )
                 else:
-                    raise e
+                    raise
             else:
-                raise e
+                raise
 
         #(s_r)=ret.data[0]
         s_r=ret.data[0]
@@ -232,8 +225,9 @@ class Subscriber():
         await asyncio.create_task(self.listener._start_endpoint())
 
     async def delete(self):
-        await self._interface.del_subscribers(self.record.id)
-        del(self.record)
+        if hasattr(self, 'record'):
+            await self._interface.del_subscribers([ self.record ])
+            del(self.record)
         self.remove_graph()
 
     def points_to_file(self, path):
@@ -305,8 +299,6 @@ class Subscriber():
     """
     def add_consumer(self):
         raise NotImplementedError
-        #pass
-
 
 
 class Agent():
@@ -314,6 +306,7 @@ class Agent():
         self._interface=i
         self._spec=spec
         self._logger=forcesim_logging.get_logger('Agent')
+        self._id=None
     
     async def register_one(self):
         if self._id:
@@ -354,7 +347,6 @@ class AgentSet():
         ret=await self._interface.add_agents([ (self._spec, self._count) ])
         id_list=ret.data[0]
 
-
         for (id, agent) in zip(id_list, self._agents):
             agent._id=id
 
@@ -366,17 +358,19 @@ class AgentSet():
                 )
     
         try: 
-            deleted=await self._interface.delete_agents([
+            ret=await self._interface.delete_agents([
                 agent._id for agent in self._agents
             ])
-        except Interface.InterfaceException as e:
-            for (error_code, data) in e.error.handle_multiple():
+        except Interface.ErrorResponseException as e:
+            for (_, error_code, data) in e.error.get_multiple():
                 if error_code == error_code_t.Not_found:
                         self._logger.error(
                             'AgentSet.delete: agent ID does not exist in forcesim instance: {'
                         )
                 else:
                     raise e
+        except Interface.ResponseIntegrityException as e:
+            pass
 
 
         # delete all our agents regardless of the outcome of the request - if there's an
@@ -403,3 +397,99 @@ class Config():
     info_sequence: List[List[str]]
 
 
+
+"""
+Basic client class, intended to reduce boilerplate when implementing tests and other workflows
+Maintain an Interface instance which is provided automatically to the classes above
+
+Must be used with context manager `with` syntax
+Currently, add_* methods must called before `start` - otherwise they won't take effect
+"""
+class Session():
+
+    def __init__(self, interface_addr, interface_port, log, iter_block=100) -> None:
+        self.interface=Interface(interface_addr, interface_port)
+        self.log=log
+
+        self.agents={}
+        self.subscribers={}
+        self.agentsets={}
+
+        self.iter_block=iter_block
+
+    # take actual objects - not config
+
+    def add_agent(self, name, **kwargs):
+        self.agents[name]=Agent(
+            self.interface, **kwargs
+        )
+    def add_agentset(self, name, **kwargs):
+        self.agentsets[name]=AgentSet(
+            self.interface, **kwargs
+        )
+    def add_subscriber(self, name, **kwargs):
+        self.subscribers[name]=Subscriber(
+            self.interface, **kwargs
+        )
+        
+    """
+    """
+    async def run(self, iterations=None):
+        if iterations is None:
+            iterations=self.iter_block
+
+        self.log.info(f'about to run {iterations} iterations')
+        await self.interface.run(iterations)
+
+        await self.interface.wait_for_pause()
+
+        for name, s in self.subscribers.items():
+            self.log.info(f'waiting for {iterations} records on subscriber {s.record.id}')
+            await s.wait_record_count(iterations)
+
+    """
+    Add the objects to the forcesim instance
+    should be called before `run`
+    """
+    async def start(self):
+        for name, v in self.agentsets.items():
+            await v.register()
+            self.log.info(f'registered agentset (name={name})')
+
+        for name, s in self.subscribers.items():
+            print(f'starting subscriber (name={name})')
+            await s.start()
+
+        try:
+            await self.interface.start()
+        except Interface.ErrorResponseException as e:
+            if e.error.code == error_code_t.Already_started:
+                pass
+            else:
+                raise e
+
+    async def __aenter__(self):
+
+        # ensure we are configuring the instance starting from an empty/clean state
+        self.log.info('resetting forcesim instance')
+        await self.interface.reset()
+
+        self.log.info(f'setting iter_block={self.iter_block}')
+        await self.interface.configure(iter_block=self.iter_block)
+
+        return self
+
+
+    """
+    Remove all the objects from the forcesim instance
+    """
+    async def __aexit__(self, *args):
+
+        for _, a in self.agents.items():
+            await a.delete()
+
+        for _, a in self.agentsets.items():
+            await a.delete()
+
+        for _, s in self.subscribers.items():
+            await s.delete()
