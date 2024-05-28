@@ -388,7 +388,6 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
         std::min(1.0L, std::fabs(diff) / config.force_threshold) * MAX_INTERNAL_FORCE;
     
 
-/*
     VLOG(9) << "ModeledCohortAgent_v2 debug:"
         << " diff=" << diff
         << " internal_force=" << internal_force
@@ -397,7 +396,6 @@ AgentAction ModeledCohortAgent_v2::do_evaluate(price_t current_price) {
         << " current_price=" << current_price
         << " current_subjectivity_extent=" << current_subjectivity_extent
     ;
-    */
 
 
     return { 

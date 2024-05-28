@@ -112,22 +112,11 @@ class Agent {
 
             if (this->_info_cursor < last || ! this->_info_cursor) {
 
-                // initialize our cursor to the first element in the info_view, or increment 
-                // it from its previous value
-                if (! this->_info_cursor) {
-                    this->_info_cursor = first;
-                } else {
-
-                    // keep the info cursor updated consistently with the info_view
-                    // Market has provided us with an info_view whose cursor is set
-                    //      to what we left it at previously (i.e. at the previously
-                    //      read element)
-                    (*this->_info_cursor)++;
-                    (*info_view_ptr)++;
-                }
-
                 // read() does not increment the internal pointer (cursor) of the view
-                return info_view_ptr->read();
+                this->_info_cursor = info_view_ptr->cursor();
+                auto v = info_view_ptr->read();
+                (*info_view_ptr)++;
+                return v;
             } 
             
             // either Market::info_history is empty, or there are currently no further

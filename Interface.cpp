@@ -695,7 +695,6 @@ void Interface::crow__add_subscribers(const crow::request& req, crow::response& 
             }, ret);
         
         } catch (json::exception& e) {
-
             return std::tuple<enum InterfaceErrorCode, std::string> ({
                 InterfaceErrorCode::Subscriber_config_error,
                 std::string("JSON error when processing configuration: ") + e.what()

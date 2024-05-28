@@ -203,7 +203,7 @@ class Market : public std::enable_shared_from_this<Market> {
             };
 
             this->info_history = std::unique_ptr<ts<Info::infoset_t>> {
-                new ts<Info::infoset_t>(this->timept)
+                new ts<Info::infoset_t>(this->timept, mark_mode_t::MARK_PRESENT)
             };
 
             this->initialize_perf_map();

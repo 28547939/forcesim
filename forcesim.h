@@ -109,7 +109,7 @@ struct forcesim_client {
             ("interface-port", po::value<int>()->default_value(18080), "")
             ("iter-block", po::value<int>()->default_value(1000), "")
             ("subscriber-poll-interval", po::value<int>()->default_value(5000), "")
-            ("subscriber-max-records", po::value<int>()->default_value(1000), "")
+            ("subscriber-max-records", po::value<int>()->default_value(100), "")
             ("glog-verbosity", po::value<int>()->default_value(0), "")
         ;
 
