@@ -142,7 +142,15 @@ Endpoint::Endpoint(EndpointConfig c)
 void Endpoint::emit(std::unique_ptr<json> j) {
     std::string s(j->dump());
     ++this->emitted;
-    socket.send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
+    try {
+        socket.send_to(asio::const_buffer(s.c_str(), s.size()), this->endpoint);
+    } catch (std::system_error& e) {
+        LOG(ERROR) 
+            << "Endpoint::emit: socket::send_to: " << e.what()
+            << " ; len=" << std::to_string(s.size())
+            << " ; data=" << s.c_str()
+        ;
+    }
 }
 
 

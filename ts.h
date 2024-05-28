@@ -99,6 +99,18 @@ class ts {
         return this->_marked;
     }
 
+    const std::string
+    marked_str() const {
+        auto it = this->_marked.begin();
+        std::ostringstream out;
+        while (it != std::prev(this->_marked.end())) {
+            out << std::to_string(*it);
+            out << " ";
+        }
+        out << std::to_string(*it);
+        return out.str();
+    }
+
     std::unique_ptr<std::map<timepoint_t, T>> 
     to_map(const std::optional<timepoint_t> start = std::nullopt) {
         auto ret = std::make_unique<std::map<timepoint_t, T>>();
@@ -313,9 +325,19 @@ class ts {
             // the sparse_view copies iterators from the source ts, not actual data
             // so this relies on the continued validity of the ts's underlying deque iterators
             auto do_insert = [this, &src](uintmax_t index) {
+                auto it = src.seq.begin() + index;
+                if (! it->has_value()) {
+                    std::ostringstream e;
+                    e   << "provided ts has invalid contents: empty value:"
+                        << " index=" << std::to_string(index)
+                        << " ts size=" << std::to_string(src.seq.size())
+                        << "\nmarked=" << src.marked_str()
+                    ;
+                    throw std::logic_error(e.str());
+                }
+
                 this->map.insert(this->map.end(), {
-                    src._first_tp + index,
-                    src.seq.begin() + index
+                    src._first_tp + index, it
                 });
             };
 

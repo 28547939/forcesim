@@ -127,20 +127,22 @@ void Market::main_loop() {
                         }
 
                         try {
+                            // most recently read entry
                             auto info_cursor = agent_record.agent->info_cursor();
 
                             // if applicable, adjust the position in the Info history to wherever this 
                             // particular agent left it
                             if (info_view.has_value() && info_cursor.has_value()) {
                                 auto info_cursor_v = info_cursor.value();
+                                auto& info_view_v = info_view.value();
 
-                                auto& [a,b] = (*info_view)->bounds();
+                                auto& [a,b] = info_view_v->bounds();
 
                                 // check that the agent's cursor actually lies within the range 
                                 // of values contained in the info_view
                                 if (info_cursor_v >= a && info_cursor_v <= b) {
                                     try {
-                                        (*info_view)->seek_to(info_cursor_v);
+                                        info_view_v->seek_to(info_cursor_v);
                                     } 
                                     // should not happen - we have checked the bounds
                                     catch (std::out_of_range& e) {
@@ -150,6 +152,22 @@ void Market::main_loop() {
                                             << "end=" << b.to_numeric() << "): " << e.what();
                                     }
                                 }
+                            }
+
+                            VLOG(9) << "about to call do_evaluate: "
+                                << " agent ID=" << agent_id.str()
+                            ;
+                            
+                            if (info_view.has_value()) {
+                                auto& info_view_v = info_view.value();
+                                VLOG(9)
+                                    << "info_view: bounds=[" 
+                                    << (info_view_v->bounds()).first << ", " 
+                                    << (info_view_v->bounds()).second << "]"
+                                    << " cursor=" << info_view_v->cursor()
+                                    << " info_history size " 
+                                    << std::to_string(this->info_history->size())
+                                ;
                             }
 
                             // Agent computation
@@ -392,6 +410,9 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
 
         // thrown by sparse_view constructor when there are no non-empty entries
         } catch (std::invalid_argument& e) {
+            return std::nullopt;
+        } catch (std::logic_error& e) {
+            LOG(ERROR) << "info_iterator sparse_view creation failed: " << e.what();
             return std::nullopt;
         } catch (std::out_of_range& e) {
             LOG(ERROR) << "info_iterator sparse_view creation failed: " << e.what();
