@@ -57,13 +57,14 @@ class AgentRecord {
     const agentid_t id;
     const timepoint_t created;
 
-    // Intended to be accessed directly by the Market class, so no encapsulation
+    // Intended to be accessed directly by the Market class
     std::unique_ptr<ts<Agent::AgentAction>> history;
 
 
     enum class Flags {
-        // don't take into account the Agent's info cursor when deciding whether to 
-        // delete old info history (normally it's preserved if an Agent hasn't read it)
+        // Ignore_info: don't take into account the Agent's info cursor when deciding whether to 
+        // delete old info history (by default (ie when this flag is not set), it's preserved 
+        // if an Agent hasn't read it)
         Ignore_info,    
     };
 
@@ -78,7 +79,7 @@ struct agentrecord_desc_t {
 };
 
 
-// part of a mechanism to send asynchronous commands to a market instance (without a 
+// part of a mechanism to send asynchronous commands to a Market instance (without a 
 // separate thread), see `op` classes below
 struct op_abstract;
 enum class op_t {
@@ -126,9 +127,7 @@ class Market : public std::enable_shared_from_this<Market> {
         std::map<enum op_t, std::size_t>
         op_execute_helper(std::optional<std::set<enum op_t>> = std::nullopt);
 
-        /*  protects our internal data from simultaneous access 
-            by multiple client threads
-        */
+        // protects certain parts of internal state
         std::recursive_mutex api_mtx;
 
         // "current time" - the point in time where the next iteration
@@ -148,7 +147,6 @@ class Market : public std::enable_shared_from_this<Market> {
         // earliest unread info among all the Agents
         // remains at std::nullopt until info is actually emitted
         std::optional<timepoint_t> global_agent_info_cursor;
-
 
         // testing performance of certain Market compnoents
         perf_map_t perf_map;
@@ -173,9 +171,6 @@ class Market : public std::enable_shared_from_this<Market> {
         // see below, above the `launch` method
         std::atomic<bool> launched;
         std::atomic<bool> started;
-        std::binary_semaphore start_sem;
-
-        // whether this instance's Market::configure has been called at least once
         std::atomic<bool> configured;
 
         // set by shutdown() (used by OP_SHUTDOWN) - needed in order to escape from main_loop
@@ -195,8 +190,7 @@ class Market : public std::enable_shared_from_this<Market> {
 
         Market() :
             state(state_t::PAUSED),
-            current_price(INITIAL_PRICE),
-            start_sem(0)
+            current_price(INITIAL_PRICE)
         {
             this->price_history = std::unique_ptr<ts<price_t>> {
                 new ts<price_t>(this->timept)
@@ -210,8 +204,6 @@ class Market : public std::enable_shared_from_this<Market> {
         }
         virtual ~Market();
 
-
-
         // managing startup
         // the client program needs to call the `launch` method first, to start the Market's 
         // thread. 
@@ -219,17 +211,14 @@ class Market : public std::enable_shared_from_this<Market> {
         // both methods can be called only once
         // 
         // overall, the intention is to make it possible to start the Market's thread first and have
-        // it wait for the initialization of relevant state by the calling thread before entering 
-        // the main loop
+        // it wait for the initialization of relevant state by the client before entering the main loop
         std::thread launch(bool auto_start = false) {
 
             if (this->launched == true) 
                 throw std::logic_error("Market::launch should only be called once");
 
             this->launched = true;
-
             std::thread t ([this]() {
-
                 while (true) {
                     std::unique_lock L_op { this->op_queue_mtx };
                     this->op_queue_cv.wait(L_op, [this](){ return this->op_queue.size() > 0; });
@@ -240,12 +229,10 @@ class Market : public std::enable_shared_from_this<Market> {
                         if (processed.contains(op_t::SHUTDOWN)) {
                             return;
                         }
-
                         // because of our filter, above, the op must have been START
                         break;
                     }
                 }
-
                 try {
                     this->main_loop();
                 } catch (std::system_error& e) {
@@ -254,7 +241,6 @@ class Market : public std::enable_shared_from_this<Market> {
                 } catch (std::exception& e) {
                     LOG(ERROR) << "Market::launch caught exception: " << e.what();
                 }
-
                 VLOG(5) << "Market thread exiting";
             });
 
@@ -273,26 +259,22 @@ class Market : public std::enable_shared_from_this<Market> {
         std::optional<Agent::info_view_t>
         info_iterator(const std::optional<timepoint_t>&);
 
-
         void initialize_perf_map() {
             auto perf_keys = {
-                "info_map", "iter_group"
+                "info_map", "iter_group", "subscriber_update"
             };
             for (auto k : perf_keys) {
                 this->perf_map.insert({ k, ts<std::chrono::milliseconds>(this->timept) });
             }
         }
-
         perf_map_t
         get_perf_map() {
             return this->perf_map;
         }
-
         void clear_perf_map() {
             this->perf_map.clear();
             this->initialize_perf_map();
         }
-
 
         void queue_op(std::shared_ptr<op_abstract> op);
         void configure(Config);
@@ -303,7 +285,7 @@ class Market : public std::enable_shared_from_this<Market> {
         }
 
         //  API 
-        //  All of these methods lock on Market::api_mtx
+        //  Some of these methods lock on Market::api_mtx
 
         
         // Run for the specified number of iterations, or run indefinitely (until stop 
@@ -318,18 +300,18 @@ class Market : public std::enable_shared_from_this<Market> {
         void run(std::optional<int> count = std::nullopt);
 
         
-        // when the current iteration block completes, this will remove pending iterations 
+        // when the current iteration block completes, `pause` will remove pending iterations 
         // and stop iterating. A 'RUN' `op` restarts iteration. If a 'RUN' op is already present 
         // in the queue, it will most likely be processed immediately after this stop invocation, 
         // even though the RUN op was queued before the stop invocation.
         // 
-        // Generally it is recommended to run/pause the Market instance asynchronously using `op` objects.
+        // As a result, generally it is recommended to run/pause the Market instance asynchronously 
+        // using `op` objects to ensure that requests are sequenced as intended
         void pause();
 
         // destroy all `ts` structures, set time to 0, set price to INITIAL_PRICE,
         // and destroy all Subscribers
         void reset();
-
 
         // wait for the Market to enter the state_t::PAUSED state
         // this will happen either
@@ -337,7 +319,7 @@ class Market : public std::enable_shared_from_this<Market> {
         // - when a 'PAUSE' op_t is queued and processed between iteration blocks
         //
         // this can be useful to an HTTP client, for example, to ensure that the market 
-        // is stopped and/or a certain number of iterations have occurred
+        // is paused and/or a certain number of iterations have occurred
         //
         // timepoint_t argument is the latest point in time (inclusive) that we will 
         // try to wait; std::nullopt is returned if we 'timed out' waiting beyond this
@@ -366,7 +348,8 @@ class Market : public std::enable_shared_from_this<Market> {
             return std::nullopt;
         }
 
-        // TODO account for possible exception thrown by ts constructor
+        // register and store an Agent instance (inside an AgentRecord object) and return the
+        // generated ID
         agentid_t 
         add_agent(std::unique_ptr<Agent::Agent>);
 
@@ -375,6 +358,9 @@ class Market : public std::enable_shared_from_this<Market> {
 
             return:
                 map each agentid_t to whether it was successfully deleted
+
+            Note: blocks on the processing of AgentAction Subscriber instances associated with this
+                Agent 
         */
         std::map<agentid_t, bool>
         del_agents(std::optional<std::deque<agentid_t>> = std::nullopt);
@@ -382,23 +368,22 @@ class Market : public std::enable_shared_from_this<Market> {
         std::deque<agentrecord_desc_t> 
         list_agents();
 
-
-
         /*
-            Retrieves an agent's history of Agent::AgentAction structs: the buy/sell action they have 
+            Retrieves an agent's history of Agent::AgentAction structs: the buy/sell action it has
                 taken at each timepoint (see Agent.h for Agent::AgentAction)
 
             If erase is true, the unique_ptr holding the history is std::move'd to the return value.
             If erase is false, the current contents of the history are copied.
 
-            std::nullopt is returned if the agent is not present in the map
+            std::nullopt is returned if the given agent ID doesn't exist
         */
         std::optional<std::unique_ptr<ts<Agent::AgentAction> >>
         get_agent_history(const agentid_t&, bool erase);
 
 
         /*
-            If erase is true, the price history unique_ptr is std::move'd to the return value.
+            If erase is true, the price history unique_ptr is std::move'd to the return value and
+                the price history is reinitialized.
             If erase is false, the current contents of the history are copied.
         */
         std::unique_ptr<ts<price_t>>
@@ -432,7 +417,7 @@ class Market : public std::enable_shared_from_this<Market> {
 // Market object; the Market object is unaware of the "op" internals, and just
 // calls execute on the op_abstract pointer.
 //
-// Queuing the op/inserting the op onto the op_queue blocks, but the actual execution of the 
+// Queuing the op/inserting the op onto the op_queue is synchronous, but the actual execution of the 
 // op's operation is asynchronous (from the standpoint of the client)
 // 
 // Since the Crow webserver is multithreaded, blocking on the Market API is OK, 
@@ -512,7 +497,7 @@ class op<op_t::START> : public op_base<op_t::START> {
 };
 
 
-// This is the one op class that is strictly necessary - it needs to be used to 
+// This is one op class that is strictly necessary - it needs to be used to 
 // set a Market into the RUN state once it's in the PAUSED state.
 template<>
 struct op_ret<op_t::RUN> {};
@@ -543,7 +528,7 @@ class op<op_t::SHUTDOWN> : public op_base<op_t::SHUTDOWN> {
 
 
 // this op class is also recommeneded - it ensures that competing calls to RUN
-// and PAUSE are processed in the order that they are invoked (i.e. queued)
+// and PAUSE are processed in the order that they are invoked (since they are queued)
 template<>
 struct op_ret<op_t::PAUSE> {};
 template<>
