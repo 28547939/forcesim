@@ -6,9 +6,6 @@ from enum import Enum, auto
 class MyEnum(Enum):
     def __str__(self):
         return self.name
-    # currently unused
-    #def __json__(self):
-    #    return json.dumps(self.name)
 
 class error_code_t(MyEnum):
     Already_started = auto()
