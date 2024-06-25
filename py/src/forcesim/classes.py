@@ -438,14 +438,15 @@ class Session():
         if iterations is None:
             iterations=self.iter_block
 
-        self.log.info(f'about to run {iterations} iterations')
+        self._completed_iter += iterations
+        self.log.info(f'about to run {iterations} iterations (current total={self._completed_iter})')
         await self.interface.run(iterations)
 
         await self.interface.wait_for_pause()
 
         for name, s in self.subscribers.items():
             self.log.info(f'waiting for {iterations} records on subscriber {s.record.id}')
-            await s.wait_record_count(iterations)
+            await s.wait_record_count(self._completed_iter)
 
     """
     Add the objects to the forcesim instance
@@ -476,6 +477,8 @@ class Session():
 
         self.log.info(f'setting iter_block={self.iter_block}')
         await self.interface.configure(iter_block=self.iter_block)
+
+        self._completed_iter=0
 
         return self
 
