@@ -6,6 +6,7 @@
   * Google's `glog` logging library (https://github.com/google/glog/)
   * `crow` HTTP server (https://github.com/CrowCpp/Crow)
   * `json` from (https://github.com/nlohmann/json)
+
   * `boost::program_options` shared library
   * `asio` shared library
 * Python
@@ -48,3 +49,10 @@ is no link to `python`)
 
 ## Notes
 
+Demonstration of basic usage with the `basic.py` test
+
+[forcesim.webm](https://github.com/user-attachments/assets/34409232-5dfb-4b4c-aef2-e984286e39d7)
+
+Resulting graph
+
+![example](https://github.com/user-attachments/assets/9fedde00-cbc4-4f8e-9164-922ed4831194)
