@@ -118,8 +118,6 @@ class Subscriber():
 
     class Listener():
 
-        _socket : Any
-        _logger : logging.Logger
 
         class subscriber_protocol:
             def __init__(self, subscriber_obj):
@@ -171,9 +169,6 @@ class Subscriber():
 
 
 
-    _flushed_wait : Any
-    _record_count_wait : Dict[int, Tuple[int, asyncio.Event]] = {}
-    _points : List = []
 
     def __init__(self, i : Interface, config : SubscriberConfig, graph : Optional[Graph] = None):
         """
@@ -191,6 +186,9 @@ class Subscriber():
         self._interface=i
         self._config=config
         self._logger=forcesim_logging.get_logger(f'Subscriber({config.type})')
+
+        self._record_count_wait : Dict[int, Tuple[int, asyncio.Event]] = {}
+        self._points : List = []
 
         s_l = Subscriber.Listener(self)
         self.listener=s_l
@@ -255,7 +253,8 @@ class Subscriber():
 
     def remove_graph(self):
         #self.listener.remove_graph()
-        del(self._graph)
+        if self.has_graph():
+            del(self._graph)
 
     def render_graph(self, path=None):
 

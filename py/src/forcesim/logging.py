@@ -10,9 +10,9 @@ standard logging set-up to be used throughout
 def setup_logger(logger : logging.Logger, additional_handlers : List[logging.Handler] =[]):
 
     fmt=logging.Formatter(
-        fmt='',
+        fmt='[%(asctime)s] [%(module)s] %(message)s',
         datefmt='%Y-%m-%d_%H-%M-%S.%f'
-    )
+    ) 
 
     logger.setLevel(_default_level)
 
