@@ -122,11 +122,13 @@ async def main():
 
             parameter=None
             graph=None
-            if config.subscribers[name]['graph']:
-
+            if config.subscribers[name]['graph'] == True:
                 graph=Graph(output_path=os.path.join(
                     output_dir_path, name+'.png'
                 ))
+
+            else:
+                log.info(f'graphing disabled for subscriber {name} in config')
 
             if (sconfig.type == subscriber_type_t.AGENT_ACTION 
                 and sconfig.parameter is None):
@@ -185,13 +187,14 @@ async def main():
             await session.run()
 
 
-        log.info('outputting graphs')
 
-        for (_, s) in session.subscribers.items():
-            s.render_graph()
-            s.points_to_file(os.path.join(
-                output_dir_path, name+'.json'
-            ))
+        for (name, s) in session.subscribers.items():
+            if s.has_graph():
+                log.info(f'outputting graph for subscriber {name}')
+                s.render_graph()
+                s.points_to_file(os.path.join(
+                    output_dir_path, name+'.json'
+                ))
 
 
 
