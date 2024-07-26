@@ -460,7 +460,7 @@ class Interface():
                 "config": config_dict
             })
 
-        print(f"add_subscribers on {len(ss)} items")
+        self.logger.info(f"add_subscribers on {len(ss)} items")
         ret=await self._aio_json_req('/subscribers/add', data=req_objects)
         ret=self._ok_or_raise(ret)
 

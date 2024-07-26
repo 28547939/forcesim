@@ -87,20 +87,6 @@ class Graph():
 
 
 
-"""
-TODO listener multiplexing
-Subscribers which use a parameter (currently just AGENT_ACTION, but in general, most likely 
-any subscriber type aside from PRICE) will require multiplexing if we allow the same
-UDP endpoint to be shared among distinct parameters (that is, distinct logical Subscribers)
-In particular there will be a distinct Subscriber+Listener pair of instances for each 
-distinct parameter value (eg agent ID), with an adapter class which de-multiplexes
-data received by the subscriber_protocol, passing data to the correct Subscriber/Listener.
-
-That way, we can run hundreds or even thousands of logically distinct Subscribers on the 
-same UDP endpoint, so avoiding using a different UDP port for each one. 
-Since each UDP message contains the parameter (eg agent ID) associated with the data, 
-de-multiplexing will not be a problem.
-"""
 
 """
 Representation of a subscriber in this program
@@ -145,7 +131,7 @@ class Subscriber():
                         )
                         self._subscriber.add_points(points)
                 except json.JSONDecodeError as e:
-                    print(e)
+                    self._subscriber._logger.error(e)
 
         def __init__(self, subscriber_obj):
             self._subscriber = subscriber_obj
@@ -457,7 +443,7 @@ class Session():
             self.log.info(f'registered agentset (name={name})')
 
         for name, s in self.subscribers.items():
-            print(f'starting subscriber (name={name})')
+            self.log.info(f'starting subscriber (name={name})')
             await s.start()
 
         try:
@@ -495,3 +481,19 @@ class Session():
 
         for _, s in self.subscribers.items():
             await s.delete()
+
+
+"""
+TODO listener multiplexing
+Subscribers which use a parameter (currently just AGENT_ACTION, but in general, most likely 
+any subscriber type aside from PRICE) will require multiplexing if we allow the same
+UDP endpoint to be shared among distinct parameters (that is, distinct logical Subscribers)
+In particular there will be a distinct Subscriber+Listener pair of instances for each 
+distinct parameter value (eg agent ID), with an adapter class which de-multiplexes
+data received by the subscriber_protocol, passing data to the correct Subscriber/Listener.
+
+That way, we can run hundreds or even thousands of logically distinct Subscribers on the 
+same UDP endpoint, so avoiding using a different UDP port for each one. 
+Since each UDP message contains the parameter (eg agent ID) associated with the data, 
+de-multiplexing will not be a problem.
+"""
