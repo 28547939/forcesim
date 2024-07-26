@@ -503,6 +503,7 @@ Market::reset() {
 
     this->timept = 0;
     this->current_price = INITIAL_PRICE;
+    this->global_agent_info_cursor = 0;
 
     this->price_history->clear();
     this->info_history->clear();
