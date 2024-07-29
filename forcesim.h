@@ -119,6 +119,7 @@ struct forcesim_client {
         }
     }
 
+    // parse_cli must be called before run
     void
     parse_cli(int argc, const char* const argv[]) {
         google::InitGoogleLogging(argv[0]);
@@ -196,6 +197,7 @@ struct forcesim_client {
         }
     }
 
+    // parse_cli must be called before run
     void run() {
 
         for (auto c : this->components) {
@@ -206,8 +208,6 @@ struct forcesim_client {
         }
 
         if (components.contains(forcesim_component::Market)) {
-
-            this->market = std::make_shared<Market::Market>();
             auto market_v = this->market.value();
             this->threads[fc::Market] = market_v->launch();
             //this->proctitle(this->threads[fc::Market], fc::Market)

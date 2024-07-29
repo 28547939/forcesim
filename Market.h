@@ -250,6 +250,10 @@ class Market : public std::enable_shared_from_this<Market> {
             return std::move(t);
         }
 
+        timepoint_t now() {
+            return this->timept;
+        } 
+
         ts<Agent::AgentAction>::view 
         agent_action_iterator(const timepoint_t&, agentid_t);
 
@@ -321,14 +325,22 @@ class Market : public std::enable_shared_from_this<Market> {
         // this can be useful to an HTTP client, for example, to ensure that the market 
         // is paused and/or a certain number of iterations have occurred
         //
-        // timepoint_t argument is the latest point in time (inclusive) that we will 
+        // timepoint_t `tp` argument is the latest point in time (inclusive) that we will 
         // try to wait; std::nullopt is returned if we 'timed out' waiting beyond this
         // threshold
         //
         // currently, we also return if the Market shuts down while we're waiting, even
         //  if it hasn't entered the PAUSED state
+        //
+        // if require_time is true, wait_for_pause will additionally wait until the
+        // given timepoint is reached (or raise an exception if no timepoint was given),
+        // rather than returning immediately when the PAUSED state is reached
+        // TODO for now, we are not raising an exception - just returning nullopt
         std::optional<timepoint_t> 
-        wait_for_pause(const std::optional<timepoint_t>& tp) {
+        wait_for_pause(const std::optional<timepoint_t>& tp, bool require_time = false) {
+            if (require_time == true && ! tp.has_value()) {
+                return std::nullopt;
+            }
             using namespace std::chrono_literals;
             std::unique_lock L { this->api_mtx, std::defer_lock };
             while ( (tp.has_value() ? this->timept <= tp : true) ) {
@@ -338,7 +350,9 @@ class Market : public std::enable_shared_from_this<Market> {
 
                 L.lock();
                 if (this->state == state_t::PAUSED) {
-                    return this->timept;
+                    if (!require_time || (require_time == true && this->timept >= tp.value())) {
+                        return this->timept;
+                    }
                 }
                 L.unlock();
 

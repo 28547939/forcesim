@@ -20,10 +20,7 @@ namespace Info {
     };
 
     struct Abstract {
-        protected:
-        static const Types type;
         public:
-        //Abstract() = delete;
         virtual Types t() = 0;
     };
 
@@ -34,7 +31,6 @@ namespace Info {
         private:
         static const Types type = T; 
         public:
-        //Base() = delete;
         Types t() final { return this->type; } 
         virtual bool is_valid() = 0;
     };

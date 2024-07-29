@@ -29,6 +29,10 @@ add_executable ( forcesim ${forcesim_SRCS} forcesim.cpp )
 #add_executable ( test-interface ${forcesim_SRCS} tests/interface.cpp )
 add_executable ( test-agent Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/agent.cpp )
 add_executable ( test-subscriber Agent/Agent.cpp json_conversion.cpp Market.cpp Subscriber/implementation.cpp tests/subscriber.cpp )
+add_executable ( 
+	test-info Agent/Agent.cpp json_conversion.cpp Market.cpp 
+	Interface.cpp Subscriber/implementation.cpp tests/info.cpp 
+)
 add_executable ( test-ts tests/ts.cpp )
 add_executable ( test-timepoint tests/timepoint.cpp )
 add_executable ( v2-dist-points Agent/Agent.cpp json_conversion.cpp tests/v2_dist_points.cpp )
