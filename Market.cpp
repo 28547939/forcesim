@@ -508,6 +508,8 @@ Market::reset() {
     this->price_history->clear();
     this->info_history->clear();
 
+    this->remaining_iter = 0;
+
     return;
 }
 
