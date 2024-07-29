@@ -1,12 +1,31 @@
 
-#include "../Agent.h"
+#include "../Agent/Agent.h"
 #include "../types.h"
 #include "../Info.h"
 
 #include <optional>
 #include <fstream>
 
-void print_agentaction(price_t p, AgentAction a) {
+std::random_device r;
+std::mt19937 engine (r());
+
+std::bernoulli_distribution tf(0.5);
+
+int rand(int max) {
+    std::uniform_int_distribution rint(1, max);
+    return rint(engine);
+}
+
+float frand(float max) {
+    std::uniform_real_distribution rfloat( (float) 0.0, max);
+    return rfloat(engine);
+}
+
+bool randtf() {
+    return tf(engine);
+}
+
+void print_agentaction(price_t p, Agent::AgentAction a) {
 	std::cout 
 		<< "price=" << std::to_string(static_cast<double>(p))
 		<< " direction=" 
@@ -16,7 +35,7 @@ void print_agentaction(price_t p, AgentAction a) {
 	;
 }
 
-void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
+void print_distribution(std::shared_ptr<Agent::ModeledCohortAgent_v2> a, price_t p) {
     auto pts = a->compute_distribution_points(p);
 
     std::ostringstream s;
@@ -28,7 +47,8 @@ void print_distribution(std::shared_ptr<ModeledCohortAgent_v2> a, price_t p) {
 }
 
 
-ModeledCohortAgent_v2 agent_from_file(std::string path, std::string agent_key) {
+Agent::ModeledCohortAgent_v2 agent_from_file(std::string path, std::string agent_key) {
+    using namespace Agent;
     std::ifstream f(path, std::ios::binary);
     json agent_config_list_json;
     f >> agent_config_list_json;

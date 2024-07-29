@@ -19,8 +19,12 @@
 using json = nlohmann::json;
 
 
+/*  agent.cpp - for experimenting with and testing specific agents
+    not for testing agent functionality in general: TODO in market.cpp and elsewhere
+*/
+
 // create a 'dummy' AgentRecord object to allow us to call Market::do_evaluate
-// no longer used - we have Market::test_agentaction
+// no longer used - we have Market::test_evaluate
 /*
 AgentRecord get_agentrecord(std::unique_ptr<Agent> a) {
 

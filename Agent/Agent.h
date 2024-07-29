@@ -15,7 +15,8 @@ using json = nlohmann::json;
 
 namespace Agent {
 
-typedef std::unique_ptr<ts<Info::infoset_t>::sparse_view> info_view_t;
+typedef std::unique_ptr<ts<Info::infoset_t>::sparse_view> 
+info_view_t;
 
 const int MAX_INTERNAL_FORCE = 100;
 
@@ -80,6 +81,8 @@ struct AgentConfigBase {
             throw std::invalid_argument("AgentConfig: external_force must be > 0");
         }
     }
+
+    AgentConfigBase() : external_force(0), schedule_every(1) {}
 };
 template<enum AgentType T>
 struct AgentConfig : AgentConfigBase {
