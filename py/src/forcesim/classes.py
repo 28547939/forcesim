@@ -173,7 +173,7 @@ class Subscriber():
         self._config=config
         self._logger=forcesim_logging.get_logger(f'Subscriber({config.type})')
 
-        self._record_count_wait : Dict[int, Tuple[int, asyncio.Event]] = {}
+        self._record_count_wait : Dict[int, List[asyncio.Event]] = {}
         self._points : List = []
 
         s_l = Subscriber.Listener(self)
@@ -396,9 +396,9 @@ class Session():
         self.interface=Interface(interface_addr, interface_port)
         self.log=log
 
-        self.agents={}
-        self.subscribers={}
-        self.agentsets={}
+        self.agents : Dict[str, Agent]={}
+        self.subscribers : Dict[str, Subscriber]={}
+        self.agentsets : Dict[str, AgentSet]={}
 
         self.iter_block=iter_block
 

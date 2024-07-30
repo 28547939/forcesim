@@ -7,6 +7,10 @@ class MyEnum(Enum):
     def __str__(self):
         return self.name
 
+class Direction(MyEnum):
+    UP = auto()
+    DOWN = auto()
+
 class error_code_t(MyEnum):
     Already_started = auto()
     General_error = auto()
@@ -82,7 +86,7 @@ class AgentSpec():
 # its config
 @dataclass()
 class TrivialAgentConfig(AgentConfig):
-    direction: Enum('Direction', ['UP', 'DOWN'])
+    direction: Direction
     internal_force: float
 
 @dataclass()
