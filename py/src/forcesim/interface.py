@@ -1,6 +1,6 @@
 import itertools
 
-from typing import List, Tuple, Any, Optional, Dict
+from typing import List, Tuple, Any, Optional, Dict, Generator
 
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
@@ -59,11 +59,11 @@ class Error(interface_ret):
         self.code=error_code
         super().__init__(*args, **kwargs)
 
-    def get_multiple(self) -> Tuple[Any, Tuple[error_code_t, str]]:
+    def get_multiple(self) -> Generator[Tuple[Any, Tuple[error_code_t, str]], None, None]:
         # TODO use typing.assert_type - Python 3.11
         if isinstance(self.data, list):
             for i in range(0, len(self.data)):
-                if self.error_keys is not None and k in self.error_keys:
+                if self.error_keys is not None and i in self.error_keys:
                     if isinstance(self.data[i], tuple):
                         yield self.data[i]  
                     else:

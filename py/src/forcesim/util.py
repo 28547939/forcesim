@@ -1,4 +1,4 @@
-from typing import List, Tuple, Any, Optional, Dict
+from typing import List, Tuple, Any, Optional, Dict, Generator
 
 import json
 import yaml
@@ -73,7 +73,7 @@ def do_load_json_recursive(path, cls):
 
 class AgentLoader(JsonLoader):
     @staticmethod
-    def load(filename) -> Dict[str, Tuple[AgentSpec,Optional[str]] ]:
+    def load(filename) -> Generator[Tuple[str, Tuple[AgentSpec,Optional[str]] ], None, None]:
         with open(filename, 'r') as f:
             conf=json.load(f)
 
