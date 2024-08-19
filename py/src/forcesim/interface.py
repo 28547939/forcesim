@@ -21,14 +21,12 @@ Represents the state in the forcesim instance after creating a
 subscriber with the given `config`, which the instance assigns a
 unique ID `id`
 """
-#@dataclass(kw_only=True, frozen=True)
 @dataclass(frozen=True)
 class SubscriberRecord():
     config : SubscriberConfig
     id : int
 
 
-#@dataclass(kw_only=True, frozen=True)
 @dataclass(frozen=True)
 class AgentRecord():
     config : AgentConfig
@@ -59,8 +57,12 @@ class Error(interface_ret):
         self.code=error_code
         super().__init__(*args, **kwargs)
 
+    # iterate over the errors in the response in the case of an error_code of type Multiple
     def get_multiple(self) -> Generator[Tuple[Any, Tuple[error_code_t, str]], None, None]:
-        # TODO use typing.assert_type - Python 3.11
+
+        if self.code != error_code_t.Multiple:
+            raise TypeError('Error.get_multiple can only be called on an error of type Multiple')
+
         if isinstance(self.data, list):
             for i in range(0, len(self.data)):
                 if self.error_keys is not None and i in self.error_keys:
@@ -89,9 +91,12 @@ class Error(interface_ret):
        "error_code": str|null,  # string representation of error code, or null if no error
        "message": str,
        "api_version": float,
-       "data_type": TODO
-       "data": Any  (generally either dict or list)
+       "data_type": "null|Data|Multiple_stringmap|Multiple_pairlist|Multiple_barelist"
+       "data": Any (depends on the method)
     }
+
+    Methods of this class will process raw data from the server using _process_response, which 
+    returns an instance of either Ok or Error.
 """
 class Interface():
     """
@@ -112,8 +117,6 @@ class Interface():
             # calls interface_ret.__str__
             output=f"""The instance responded with an error:\n\n{error.__str__()}"""
             super().__init__(output, *args, **kwargs)
-
-        # TODO add error to output string
 
     """
     raised when the response received from the server does not match correct specification /
@@ -150,8 +153,6 @@ class Interface():
 
             super().__init__(output, *args, **kwargs)
 
-        
-
 
     def __init__(self, remote_addr, remote_port):
         self.remote_addr = remote_addr
@@ -160,14 +161,8 @@ class Interface():
         self.logger=forcesim_logging.get_logger('interface')
 
         
-    
-# TODO
-    def _url(self, path):
-        return self.remote_addr +':'+ self.remote_port
-
     def _ok_or_raise(self, ret : interface_ret) -> Ok:
         if isinstance(ret, Error):
-            # TODO possibly use ExceptionGroup in the case of Multiple
             raise Interface.ErrorResponseException(ret)
         else:
             return ret
@@ -176,10 +171,15 @@ class Interface():
     """
     perform some minimal interpretation/processing of the raw response 
     structure to make it easier for the client program to detect errors
-    and process the data
+    and process the data.
+    _process_response preserves the structure of the response, but converts types as necessary,
+    including converting string representations to enum values
+
+    _process_response returns an instance of either Ok or Error (both subtypes of interface_ret)
 
     Methods in Interface will use _ok_or_raise on the return value of _process_response, 
-    either returning an Ok value or raising an exception with type ErrorResponseException.
+    either returning an Ok value or raising an exception with type ErrorResponseException
+    based on the Error value returned by _process_response.
     If an error is encountered during the actual handling/processing of the response, a
     ResponseIntegrityException is raised instead
     """
@@ -279,7 +279,6 @@ class Interface():
                     data_processed[i]=data[i]
 
         elif data_type == response_type_t.Multiple_pairlist:
-            data_processed
             if not isinstance(data, list):
                 raise generate_exception(
                     message='Multiple_pairlist response type indicated but data is not a list'
@@ -289,6 +288,8 @@ class Interface():
 
             for (key, item) in data:
                 if key in error_keys:
+                    # the output of multi_convert_error_code is still a tuple
+                    # Error.get_multiple will flatten the (key, errortuple) into a 3-tuple
                     data_processed.append( (key, multi_convert_error_code(key, item)) )
                 else:
                     data_processed.append( (key, item) )
@@ -344,8 +345,6 @@ class Interface():
 
             async with session.request(method, url, data=data) as resp:
                 return await self._process_response(url, data, resp)
-
-
 
 
     async def run(self, iter_count : int):
@@ -412,12 +411,12 @@ class Interface():
         ret=await self._aio_json_req('/agent/delete', data=x)
         return self._ok_or_raise(ret)
 
-    # TODO - not yet useful
+    # TODO - not yet useful - we have subscribers
     def get_agent_history(self, x: AgentRecord):
         raise NotImplementedError()
+    # currently using the `reset` method
     def delete_agent_history(self, x : AgentRecord):
         raise NotImplementedError()
-
     # TODO - currently using subscribers to accomplish this
     def get_price_history(self):
         raise NotImplementedError()

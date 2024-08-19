@@ -238,7 +238,6 @@ class Subscriber():
         self._graph=graph
 
     def remove_graph(self):
-        #self.listener.remove_graph()
         if self.has_graph():
             del(self._graph)
 
@@ -347,15 +346,15 @@ class AgentSet():
                 agent._id for agent in self._agents
             ])
         except Interface.ErrorResponseException as e:
-            for (_, error_code, data) in e.error.get_multiple():
+            for (agent_id, error_code, data) in e.error.get_multiple():
                 if error_code == error_code_t.Not_found:
                         self._logger.error(
-                            'AgentSet.delete: agent ID does not exist in forcesim instance: {'
+                            f'AgentSet.delete: agent ID does not exist in forcesim instance: {agent_id}'
                         )
                 else:
                     raise e
         except Interface.ResponseIntegrityException as e:
-            pass
+            raise
 
 
         # delete all our agents regardless of the outcome of the request - if there's an

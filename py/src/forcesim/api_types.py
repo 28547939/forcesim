@@ -3,15 +3,15 @@ from typing import List, Tuple, Any, Optional, Dict
 from dataclasses import dataclass, asdict
 from enum import Enum, auto
 
-class MyEnum(Enum):
+class enum_base(Enum):
     def __str__(self):
         return self.name
 
-class Direction(MyEnum):
+class Direction(enum_base):
     UP = auto()
     DOWN = auto()
 
-class error_code_t(MyEnum):
+class error_code_t(enum_base):
     Already_started = auto()
     General_error = auto()
     Json_parse_error = auto()
@@ -22,7 +22,7 @@ class error_code_t(MyEnum):
     Agent_config_error = auto()
     Subscriber_config_error = auto()
 
-class response_type_t(MyEnum):
+class response_type_t(enum_base):
     Data = auto()
     Multiple_stringmap = auto()
     Multiple_pairlist = auto()
@@ -36,16 +36,16 @@ class response_type_t(MyEnum):
         ]
 
 
-class agentclass_t(MyEnum):
+class agentclass_t(enum_base):
     TrivialAgent = auto()
     ModeledCohortAgent_v1 = auto()
     BasicNormalDistAgent = auto()
     ModeledCohortAgent_v2 = auto()
 
-class infotype_t(MyEnum):
+class infotype_t(enum_base):
     Subjective = auto()
 
-class subscriber_type_t(MyEnum):
+class subscriber_type_t(enum_base):
     AGENT_ACTION = auto()
     PRICE = auto()
 
