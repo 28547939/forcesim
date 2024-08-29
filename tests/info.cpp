@@ -114,6 +114,8 @@ int main (int argc, char* argv[]) {
     auto info_probability = client.options_vm["info-probability"].as<float>();
     auto m = client.market.value();
 
+    bool test_success = true;
+
     std::thread client_thread([m, &client]{
         m->start();
         client.run();
@@ -211,6 +213,7 @@ int main (int argc, char* argv[]) {
 
             if (hsize != rsize) {
                 std::cout << "sizes differ\n";
+                test_success = false;
                 print_infohistory(*hptr, id);
                 std::cout << "\n\n";
                 continue;
@@ -221,6 +224,7 @@ int main (int argc, char* argv[]) {
             for (int i = 0; i < ref_history.size(); i++) {
                 if (hptr->info_history.at(i) != ref_history.at(i)) {
                     std::cout << "not equal at " << i << "\n";
+                    test_success = false;
 
                     print_infohistory(*hptr, id);
                     std::cout << "\n\n";
@@ -231,7 +235,10 @@ int main (int argc, char* argv[]) {
         }
     }
 
+    client.shutdown();
     client_thread.join();
+
+    client.exit( (test_success == true ? 0 : 1) );
 }
 
 
