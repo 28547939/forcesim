@@ -39,6 +39,8 @@ void signal_handler (int s) {
     }
 };
 
+
+
 enum class forcesim_component {
     Market,
     Subscribers,
@@ -292,6 +294,11 @@ struct forcesim_client {
         }
 
         VLOG(2) << "exiting\n";
+    }
+
+    // trigger client shutdown just as if it were sent SIGINT/SIGTERM
+    void shutdown() {
+        shutdown_signal.store(true);
     }
 
     void exit(int code) {
