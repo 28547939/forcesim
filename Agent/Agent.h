@@ -108,25 +108,77 @@ class Agent {
     std::optional<Info::infoset_t>
     read_next_infoset() {
 
+
         if (this->info_view.has_value()) {
             auto& info_view_ptr = this->info_view.value();
 
             auto [first,last] = info_view_ptr->bounds();
 
-            if (this->_info_cursor < last || ! this->_info_cursor) {
+            try {
+                if (this->_info_cursor.has_value()) {
+                    auto info_cursor_v = this->_info_cursor.value();
 
-                // read() does not increment the internal pointer (cursor) of the view
-                this->_info_cursor = info_view_ptr->cursor();
-                auto v = info_view_ptr->read();
-                (*info_view_ptr)++;
-                return v;
-            } 
+                    // if somehow the view range has progressed past our cursor, skip to its
+                    // first available element 
+                    // (Market.cpp should not allow this to happen)
+                    //
+                    // we add 1 because our cursor is the last element we read, which may be 
+                    // exactly one element behind the first in the range, but never further than that
+                    if (info_cursor_v + 1 < first) {
+                        this->_info_cursor = std::nullopt;
+                        info_view_ptr->seek_to(first);
+
+                        LOG(ERROR) 
+                            << "skipping to first element in info view:"
+                            << " first=" << first 
+                            << " last=" << last
+                            << " info_cursor_v=" << info_cursor_v
+                        ;
+                    }
+
+                    // this should not happen, and there's no reasonable info to read in this case
+                    else if (info_cursor_v > last) {
+                        LOG(ERROR) 
+                            << "agent info cursor lies beyond info view range:"
+                            << " first=" << first 
+                            << " last=" << last
+                            << " info_cursor_v=" << info_cursor_v
+                        ;
+                        return std::nullopt;
+                    } 
+                    
+                    // this is normal and just means that no info has been added since we last read
+                    else if (info_cursor_v == last) {
+                        return std::nullopt;
+                    } 
+
+                    // read the next element, which 1 after the element we previously read
+                    else {
+                        info_view_ptr->seek_to(info_cursor_v);
+                        (*info_view_ptr)++;
+                    }
+                }
             
-            // either Market::info_history is empty, or there are currently no further
-            // non-empty entries
-            else {
+                // if we have never read an info, initialize our cursor to the first
+                // available element in the info view
+                else if (! this->_info_cursor.has_value()) {
+                    info_view_ptr->seek_to(first);
+                } 
+            }
+            catch (std::out_of_range& e) {
+                LOG(ERROR) << "info_view->seek_to failed "
+                    //<< "(agentid=" << agent_record.id.str() << ", "
+                    << "first=" << first.to_numeric() << ", "
+                    << "last=" << last.to_numeric() << "): " << e.what()
+                ;
+
                 return std::nullopt;
             }
+
+            auto v = info_view_ptr->read();
+            // store the timepoint of the element we just read
+            this->_info_cursor = info_view_ptr->cursor();
+            return v;
         } 
         
         // info_view was not provided to the agent (eg Market::info_history not initialized yet)

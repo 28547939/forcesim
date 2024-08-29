@@ -129,42 +129,21 @@ void Market::main_loop() {
                         try {
                             // most recently read entry
                             auto info_cursor = agent_record.agent->info_cursor();
-
-                            // if applicable, adjust the position in the Info history to wherever this 
-                            // particular agent left it
-                            if (info_view.has_value() && info_cursor.has_value()) {
-                                auto info_cursor_v = info_cursor.value();
-                                auto& info_view_v = info_view.value();
-
-                                auto& [a,b] = info_view_v->bounds();
-
-                                // check that the agent's cursor actually lies within the range 
-                                // of values contained in the info_view
-                                if (info_cursor_v >= a && info_cursor_v <= b) {
-                                    try {
-                                        info_view_v->seek_to(info_cursor_v);
-                                    } 
-                                    // should not happen - we have checked the bounds
-                                    catch (std::out_of_range& e) {
-                                        LOG(ERROR) << "info_view->seek_to failed "
-                                            << "(agentid=" << agent_record.id.str() << ", "
-                                            << "begin=" << a.to_numeric() << ", "
-                                            << "end=" << b.to_numeric() << "): " << e.what();
-                                    }
-                                }
-                            }
-
-                            VLOG(9) << "about to call do_evaluate: "
-                                << " agent ID=" << agent_id.str()
+                            VLOG(10) 
+                                << "agent: info_cursor=" 
+                                << (info_cursor.has_value() 
+                                    ? std::to_string(info_cursor.value().to_numeric()) : "null")
+                                << " agent_id=" << agent_id.str()
                             ;
-                            
+
                             if (info_view.has_value()) {
-                                auto& info_view_v = info_view.value();
+                                auto& info_view_ptr = info_view.value();
                                 VLOG(9)
                                     << "info_view: bounds=[" 
-                                    << (info_view_v->bounds()).first << ", " 
-                                    << (info_view_v->bounds()).second << "]"
-                                    << " cursor=" << info_view_v->cursor()
+                                    << (info_view_ptr->bounds()).first << ", " 
+                                    << (info_view_ptr->bounds()).second << "]"
+                                    << " cursor=" << info_view_ptr->cursor()
+                                    << " agent_id=" << agent_id.str()
                                     << " info_history size " 
                                     << std::to_string(this->info_history->size())
                                 ;
@@ -178,12 +157,6 @@ void Market::main_loop() {
                             current_price = current_price_new;
                             info_view = std::move(info_view_ret);
 
-                            // nullopt info_view means it was never initialized before our iteration 
-                            // so info_history must be empty
-                            if (info_view.has_value()) {
-                                (*info_view)->reset_cursor();
-                            }
-                            
                             // nullopt Agent::AgentAction means there was an exception during the Agent computation
                             // (see Agent class)
                             if (agent_action.has_value()) {
