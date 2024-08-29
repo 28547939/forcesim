@@ -413,8 +413,8 @@ class ts {
         }
 
         // TODO guarantee that we never reach map.end()
-        auto operator+=(uintmax_t period) {
-            this->_cursor += period;
+        auto operator+=(uintmax_t steps) {
+            this->_cursor += steps;
             return *this;
         }
         auto operator++() {
@@ -441,12 +441,15 @@ class ts {
 
     /*  The view class     
         TODO documentation
-        cursor represents next unread element
 
     */
     class view {
         typename std::deque<std::optional<T>>::const_iterator iter;
+
+        // the timepoint at which reads will be performed
         timepoint_t _cursor;
+
+        // inclusive bounds indicating the first and last elements we can read from
         std::pair<timepoint_t, std::optional<timepoint_t>> _bounds;
 
         public:
@@ -500,13 +503,21 @@ class ts {
             return this->_bounds;
         }
 
-        bool check_bounds(const timepoint_t& tp) {
-            return 
+        bool check_bounds(const timepoint_t& tp, bool throw_exc = false) {
+            bool ret =  
                 tp >= this->_bounds.first 
                 && (this->_bounds.second.has_value() 
                     ? this->_bounds.second.value() < tp
                     : true) // nullopt upper limit means no limit
             ;
+
+            if (ret == false and throw_exc == true) {
+                std::ostringstream e;
+                e << "seek_to: check_bounds failed tp=" << std::to_string(tp.to_numeric());
+                throw std::out_of_range(e.str());
+            }
+
+            return ret;
         }
 
         const timepoint_t& cursor() {
@@ -516,11 +527,7 @@ class ts {
 
         // seeking in a view (not sparse_view) is linear
         void seek_to(const timepoint_t& tp) {
-            if (!check_bounds(tp)) {
-                std::ostringstream e;
-                e << "seek_to: check_bounds failed tp=" << std::to_string(tp.to_numeric());
-                throw std::out_of_range(e.str());
-            }
+            check_bounds(tp, true);
 
             while (tp > this->_cursor) {
                 ++this->iter;
@@ -529,11 +536,15 @@ class ts {
         }
 
         auto operator+=(uintmax_t period) {
+            check_bounds(this->_cursor + period, true);
+
             this->iter += period;
             this->_cursor += period;
             return *this;
         }
         auto operator++() {
+            check_bounds(this->_cursor + 1, true);
+
             ++this->iter;
             ++this->_cursor;
             return *this;
