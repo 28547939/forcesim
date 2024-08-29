@@ -9,7 +9,6 @@
 std::random_device r;
 std::mt19937 engine (r());
 
-std::bernoulli_distribution tf(0.5);
 
 int rand(int max) {
     std::uniform_int_distribution rint(1, max);
@@ -21,7 +20,8 @@ float frand(float max) {
     return rfloat(engine);
 }
 
-bool randtf() {
+bool randtf(float p = 0.5) {
+    std::bernoulli_distribution tf(p);
     return tf(engine);
 }
 
