@@ -387,10 +387,7 @@ Market::info_iterator(const std::optional<timepoint_t>& tp) {
         } catch (std::logic_error& e) {
             LOG(ERROR) << "info_iterator sparse_view creation failed: " << e.what();
             return std::nullopt;
-        } catch (std::out_of_range& e) {
-            LOG(ERROR) << "info_iterator sparse_view creation failed: " << e.what();
-            return std::nullopt;
-        }
+        } 
     }
 }
 
