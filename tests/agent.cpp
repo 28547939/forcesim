@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
             vm["agent-config-key"].as<std::string>()
         );
 
-        std::shared_ptr<ModeledCohortAgent_v2> agent_ptr(&agent);
+        std::shared_ptr<Agent::ModeledCohortAgent_v2> agent_ptr(&agent);
 
         /*
 

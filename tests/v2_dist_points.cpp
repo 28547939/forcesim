@@ -1,7 +1,7 @@
 
 
 #include "../types.h"
-#include "../Agent.h"
+#include "../Agent/Agent.h"
 #include "../ts.h"
 #include "../json_conversion.h"
 
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
 
         auto agent = agent_from_file(path, key);
 
-        auto agent_config = agent.Agent_base<AgentType::ModeledCohort_v2>::config();
+        auto agent_config = agent.Agent_base<Agent::AgentType::ModeledCohort_v2>::config();
 
         agent.set_price_view(
             price_t(vm["price-view"].as<double>())
