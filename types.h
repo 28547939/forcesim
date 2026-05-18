@@ -28,7 +28,7 @@ template<class>
 class numeric_id {
     protected:
         unsigned int id;
-        inline static unsigned int last_id = 0;
+        inline static std::atomic<unsigned int> last_id = 0;
     public:
     numeric_id() {
         this->id = last_id++;
@@ -80,18 +80,18 @@ inline std::ostream& operator<<(std::ostream& os, const numeric_id<subscriber_nu
 
 class timepoint_t {
     protected:
-    std::atomic<uintmax_t> tp;
+    uintmax_t tp = 0;
 
     public:
     timepoint_t() = default;
     ~timepoint_t() = default;
-    timepoint_t(const timepoint_t& _tp) { this->tp.store(_tp.tp.load()); }
-    timepoint_t(const uintmax_t i) { this->tp.store(i); }
+    timepoint_t(const timepoint_t& _tp) { this->tp = _tp.tp; }
+    timepoint_t(const uintmax_t i) { this->tp = i; }
 
     uintmax_t to_numeric() const { return this->tp; }
 
     auto operator=(const timepoint_t& _tp) {
-        this->tp.store(_tp.tp.load());
+        this->tp = _tp.tp;
     }
 
     auto operator<=> (const timepoint_t& x) const = default;
