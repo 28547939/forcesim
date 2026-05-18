@@ -507,7 +507,7 @@ class ts {
             bool ret =  
                 tp >= this->_bounds.first 
                 && (this->_bounds.second.has_value() 
-                    ? this->_bounds.second.value() < tp
+                    ? tp < this->_bounds.second.value() 
                     : true) // nullopt upper limit means no limit
             ;
 
