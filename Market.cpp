@@ -611,7 +611,7 @@ Market::get_price_history(bool erase) {
 }
 
 std::variant<timepoint_t, std::string>
-Market::emit_info(Info::infoset_t& x) {
+Market::emit_info(Info::infoset_t x) {
     std::lock_guard L(this->api_mtx);
 
     if (! this->info_history) {

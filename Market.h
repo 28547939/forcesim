@@ -415,7 +415,7 @@ class Market : public std::enable_shared_from_this<Market> {
             iteration blocks.
         */
         std::variant<timepoint_t, std::string> 
-        emit_info(Info::infoset_t& x);
+        emit_info(Info::infoset_t x);
 
         // used to test/simulate what price would result from an iteration on one Agent
         // 
