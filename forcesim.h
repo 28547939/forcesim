@@ -246,7 +246,7 @@ struct forcesim_client {
             if (this->market.has_value()) {
 
 
-                asio::ip::address listen_addr = asio::ip::address::from_string(
+                asio::ip::address listen_addr = asio::ip::make_address(
                     this->options_vm["interface-address"].as<std::string>()
                 );
 

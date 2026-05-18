@@ -868,7 +868,7 @@ Interface::Interface(std::shared_ptr<Market::Market> m) :
 bool Interface::start(std::optional<asio::ip::address> listen_addr, int port) {
     try {
         if (!listen_addr.has_value()) {
-            listen_addr = asio::ip::address::from_string("0.0.0.0");
+            listen_addr = asio::ip::make_address("0.0.0.0");
         }
         this->crow_app.bindaddr(listen_addr->to_string()).port(port)
             .multithreaded().signal_clear().run();
